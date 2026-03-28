@@ -1,0 +1,12 @@
+# Python System Files
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Project Data (Do not push private docs/DBs)
+uploads/
+documents.db
+
+# VS Code config
+.vscode/

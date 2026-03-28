@@ -1,0 +1,33 @@
+body { 
+    font-family: 'Segoe UI', Tahoma, sans-serif; 
+    margin: 0; padding: 0; background-color: #f4f7f6; 
+}
+.top-bar {
+    background-color: white; padding: 15px 25px;
+    border-bottom: 2px solid #e0e0e0;
+}
+.brand { font-size: 24px; font-weight: bold; color: #1b5e20; }
+.dashboard-container {
+    display: flex; gap: 25px; padding: 25px; align-items: flex-start;
+}
+.sidebar {
+    flex: 1; background: white; padding: 25px; border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+.main-content {
+    flex: 3; background: white; padding: 25px; border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+label { font-weight: 600; font-size: 0.9rem; color: #666; display: block; margin-top: 10px; }
+input, select, textarea { 
+    width: 100%; padding: 10px; margin: 8px 0 18px 0; 
+    border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;
+}
+button { 
+    width: 100%; background-color: #2e7d32; color: white; border: none; 
+    padding: 12px; cursor: pointer; border-radius: 6px; font-weight: bold;
+}
+button:hover { background-color: #1b5e20; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 14px; text-align: left; border-bottom: 1px solid #eee; }
+th { background-color: #f8f9fa; color: #555; font-size: 0.85rem; text-transform: uppercase; }
