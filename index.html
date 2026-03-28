@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SimpleText Enterprise | Knowledge Management</title>
+    <style>
+        :root {
+            --primary-green: #2e7d32;
+            --dark-green: #1b5e20;
+            --bg-color: #f0f2f5;
+            --card-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            margin: 0; padding: 0; background-color: var(--bg-color); color: #333;
+        }
+
+        /* Top Navigation */
+        .top-bar {
+            background-color: #ffffff; padding: 15px 30px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 2px solid #e1e4e8;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .brand { font-size: 24px; font-weight: 800; color: var(--primary-green); }
+        .brand span { color: #666; font-weight: 400; font-size: 16px; margin-left: 5px; }
+
+        /* Layout Grid (30/70 Split) */
+        .dashboard-container {
+            display: flex; gap: 25px; padding: 25px; align-items: flex-start;
+            max-width: 1400px; margin: 0 auto;
+        }
+
+        /* Sidebar & Main Cards */
+        .sidebar, .main-content {
+            background: white; padding: 25px; border-radius: 12px;
+            box-shadow: var(--card-shadow);
+        }
+
+        .sidebar { flex: 1; min-width: 300px; }
+        .main-content { flex: 3; }
+
+        /* Form Styling */
+        h3 { margin-top: 0; color: var(--primary-green); border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        label { font-weight: 600; font-size: 0.85rem; color: #555; display: block; margin-top: 15px; }
+        
+        input, select, textarea { 
+            width: 100%; padding: 12px; margin-top: 5px; 
+            border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box;
+            font-size: 0.95rem; transition: 0.2s;
+        }
+
+        input:focus, textarea:focus { border-color: var(--primary-green); outline: none; box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1); }
+
+        button { 
+            width: 100%; background-color: var(--primary-green); color: white; border: none; 
+            padding: 14px; cursor: pointer; border-radius: 8px; font-weight: bold; 
+            font-size: 1rem; margin-top: 25px; transition: all 0.2s;
+        }
+
+        button:hover { background-color: var(--dark-green); transform: translateY(-1px); }
+
+        /* Search & Table */
+        .search-section input {
+            background-color: #f8f9fa; border: 2px solid #eee; margin-bottom: 25px; font-size: 1.1rem;
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { background-color: #f8f9fa; color: #666; font-size: 0.8rem; text-transform: uppercase; padding: 15px; text-align: left; }
+        td { padding: 15px; border-bottom: 1px solid #f0f0f0; }
+
+        .badge {
+            background-color: #e8f5e9; color: var(--primary-green); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold;
+        }
+
+        #statusMsg { margin-top: 20px; text-align: center; font-weight: bold; font-size: 0.9rem; }
+        .success { color: var(--primary-green); }
+        .error { color: #d32f2f; }
+    </style>
+</head>
+<body>
+
+    <header class="top-bar">
+        <div class="brand">SimpleText <span>Enterprise Hub</span></div>
+    </header>
+
+    <div class="dashboard-container">
+        
+        <section class="sidebar">
+            <h3>Ingest Document</h3>
+            
+            <label>Document Title</label>
+            <input type="text" id="doc_title" placeholder="e.g. Annual Audit 2026">
+
+            <label>Author / Owner</label>
+            <input type="text" id="doc_author" placeholder="Your name...">
+
+            <label>Content Summary</label>
+            <textarea id="doc_summary" rows="3" placeholder="What is this file about?"></textarea>
+
+            <label>File Category</label>
+            <select id="doc_type">
+                <option value="PDF">PDF Document</option>
+                <option value="Word">Word (.docx)</option>
+                <option value="Excel">Excel (.xlsx)</option>
+            </select>
+
+            <label>Select File</label>
+            <input type="file" id="doc_file">
+
+            <button type="button" onclick="uploadDocument()">Ingest to Knowledge Base</button>
+            <p id="statusMsg"></p>
+        </section>
+
+        <main class="main-content">
+            <div class="search-section">
+                <h3>Document Library</h3>
+                <input type="text" id="search_query" placeholder="Search keywords inside files or summaries..." onkeyup="handleSearch()">
+            </div>
+
+            <table id="docTable">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Author</th>
+                        <th>Type</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody id="docTableBody">
+                    </tbody>
+            </table>
+        </main>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+
+        async function uploadDocument() {
+            const fileInput = document.getElementById('doc_file');
+            const status = document.getElementById('statusMsg');
+            
+            if(!fileInput.files[0]) {
+                status.innerHTML = "<span class='error'>Please select a file.</span>";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            formData.append("title", document.getElementById('doc_title').value || "Untitled");
+            formData.append("created_by", document.getElementById('doc_author').value || "System");
+            formData.append("content_summary", document.getElementById('doc_summary').value || "");
+            formData.append("doc_type", document.getElementById('doc_type').value);
+
+            status.innerHTML = "Processing Ingestion...";
+
+            try {
+                const response = await fetch(`${API_URL}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    status.innerHTML = `<span class='success'>${result.message}</span>`;
+                    loadDashboard();
+                    // Clear file input
+                    fileInput.value = "";
+                } else {
+                    status.innerHTML = `<span class='error'>Error ${response.status}: ${result.detail || 'Upload Failed'}</span>`;
+                }
+            } catch (error) {
+                status.innerHTML = "<span class='error'>Network Error: Is the Backend running?</span>";
+            }
+        }
+
+        async function loadDashboard() {
+            try {
+                const response = await fetch(`${API_URL}/get-docs`);
+                const docs = await response.json();
+                renderTable(docs);
+            } catch (e) {
+                console.error("Dashboard Load Failed", e);
+            }
+        }
+
+        async function handleSearch() {
+            const query = document.getElementById('search_query').value;
+            if(query.length < 2) return loadDashboard();
+
+            try {
+                const response = await fetch(`${API_URL}/search?q=${query}`);
+                const results = await response.json();
+                renderTable(results);
+            } catch (e) {
+                console.error("Search Failed", e);
+            }
+        }
+
+        function renderTable(data) {
+            const body = document.getElementById('docTableBody');
+            if (data.length === 0) {
+                body.innerHTML = "<tr><td colspan='4' style='text-align:center;'>No documents found.</td></tr>";
+                return;
+            }
+
+            body.innerHTML = data.map(doc => `
+                <tr>
+                    <td><strong>${doc.title}</strong></td>
+                    <td>${doc.author || "---"}</td>
+                    <td><span class="badge">${doc.type || "N/A"}</span></td>
+                    <td>${doc.date || "Just now"}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Initial Load
+        window.onload = loadDashboard;
+    </script>
+</body>
+</html>
