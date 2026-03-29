@@ -70,9 +70,9 @@
             padding: 24px; 
             display: flex; 
             flex-direction: column; 
-            gap: 20px; 
+            gap: 16px; 
             flex-shrink: 0;
-            overflow-y: auto;
+            overflow: hidden;
             box-shadow: var(--shadow-sm);
         }
 
@@ -219,6 +219,7 @@
             border-collapse: collapse; 
             font-size: 0.8125rem; 
             font-family: inherit;
+            table-layout: fixed;
         }
         
         th { 
@@ -257,12 +258,36 @@
             font-weight: 600;
         }
 
+        .col-title {
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: help;
+        }
+
+        .col-author {
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: help;
+        }
+
         .col-summary { 
             color: var(--text-secondary); 
-            min-width: 220px;
-            width: 30%; 
+            max-width: 200px;
             line-height: 1.3;
             font-size: 0.8125rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: help;
+            word-break: break-word;
+        }
+
+        .col-type {
+            max-width: 100px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -317,24 +342,24 @@
     <div class="main-content">
         <aside class="sidebar">
             <div class="sidebar-section">
+                <div class="sidebar-section-title">Add New Document</div>
+                <input type="file" id="field_file" style="border: 1px solid var(--border-subtle); padding: 10px 12px; cursor: pointer; border-radius: 8px;">
+                <select id="field_type" title="Select file type">
+                    <option value="PDF" disabled selected hidden>File Type</option>
+                    <option value="PDF">PDF Document</option>
+                    <option value="Word">Word (.docx)</option>
+                    <option value="Excel">Excel (.xlsx)</option>
+                </select>
+            </div>
+
+            <div class="sidebar-section">
                 <div class="sidebar-section-title">Document Information</div>
                 <input type="text" id="field_title" placeholder="Document Title">
                 <input type="text" id="field_author" placeholder="Author or Owner">
                 <textarea id="field_summary" rows="4" placeholder="Brief summary of content..."></textarea>
             </div>
-            
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">File Configuration</div>
-                <select id="field_type">
-                    <option value="PDF">PDF Document</option>
-                    <option value="Word">Word (.docx)</option>
-                    <option value="Excel">Excel (.xlsx)</option>
-                </select>
-                
-                <input type="file" id="field_file" style="border: none; padding: 5px 0; cursor: pointer;">
-            </div>
 
-            <button class="btn-action" onclick="executeUpload()">Upload Document</button>
+            <button class="btn-action" onclick="executeUpload()">Upload document</button>
         </aside>
 
         <main class="workspace">
@@ -375,6 +400,40 @@
     const SERVER_URL = "http://127.0.0.1:8000";
 
     /**
+     * Auto-capture title and type when a file is selected
+     */
+    function handleFileSelect() {
+        const fileInput = document.getElementById('field_file');
+        const titleInput = document.getElementById('field_title');
+        const typeSelect = document.getElementById('field_type');
+        
+        if (fileInput.files[0]) {
+            const file = fileInput.files[0];
+            const fileName = file.name;
+            const fileExtension = fileName.split('.').pop().toLowerCase();
+            
+            // Auto-populate title with filename (without extension)
+            const titleWithoutExt = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
+            titleInput.value = titleWithoutExt;
+            
+            // Auto-set type based on file extension
+            const extensionMap = {
+                'pdf': 'PDF',
+                'docx': 'Word',
+                'doc': 'Word',
+                'xlsx': 'Excel',
+                'xls': 'Excel'
+            };
+            
+            const detectedType = extensionMap[fileExtension] || 'PDF';
+            typeSelect.value = detectedType;
+        }
+    }
+
+    // Attach file select handler
+    document.getElementById('field_file').addEventListener('change', handleFileSelect);
+
+    /**
      * Handles the file upload and metadata persistence.
      */
     async function executeUpload() {
@@ -402,6 +461,7 @@
                 refreshLibrary();
                 // Clear inputs for next entry
                 document.getElementById('field_title').value = "";
+                document.getElementById('field_author').value = "";
                 document.getElementById('field_summary').value = "";
                 fileInput.value = "";
             }
@@ -465,6 +525,14 @@ async function executeSearch() {
     }
 }
     /**
+     * Truncate summary to 50 characters for display, keep full text in title attribute
+     */
+    function truncateSummary(text, maxLength = 50) {
+        if (!text) return 'No summary available';
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
+    /**
      * Renders the document rows into the HTML table.
      */
     function updateTable(documents) {
@@ -475,16 +543,21 @@ async function executeSearch() {
             return;
         }
 
-        container.innerHTML = documents.map(doc => `
+        container.innerHTML = documents.map(doc => {
+            const fullTitle = (doc.title || 'Untitled').replace(/"/g, '&quot;');
+            const fullAuthor = (doc.author || 'N/A').replace(/"/g, '&quot;');
+            const fullSummary = (doc.summary || 'No summary available').replace(/"/g, '&quot;');
+            const displaySummary = truncateSummary(doc.summary || 'No summary available', 50);
+            return `
             <tr>
-                <td><strong>${doc.title}</strong></td>
-                <td>${doc.author}</td>
-                <td class="col-summary" title="${(doc.summary || 'No summary available').replace(/"/g, '&quot;')}">${doc.summary || 'No summary available'}</td>
-                <td>${doc.type}</td>
+                <td class="col-title" title="${fullTitle}"><strong>${doc.title}</strong></td>
+                <td class="col-author" title="${fullAuthor}">${doc.author}</td>
+                <td class="col-summary" title="${fullSummary}">${displaySummary}</td>
+                <td class="col-type" title="${doc.type}">${doc.type}</td>
                 <td class="col-path" title="${doc.path}">${doc.path}</td>
                 <td>${doc.date.split(' ')[0]}</td>
             </tr>
-        `).join('');
+        `}).join('');
     }
 
     // Initial data load on page startup

@@ -1,0 +1,9 @@
+@echo off
+echo [1/3] Activating Virtual Environment...
+call venv\Scripts\activate
+
+echo [2/3] Checking for missing dependencies...
+pip install -r requirements.txt
+
+echo [3/3] Starting Enterprise Backend...
+uvicorn app.main:app --reload --port 8000
