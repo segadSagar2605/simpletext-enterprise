@@ -74,5 +74,5 @@ th:nth-child(6), td:nth-child(6) { width: 10%; text-align: right; } /* Date */
     color: #e11d48 !important;
 }
 
-.search-input.error-state::placeholder { color: #e11d48 !important; opacity: 1; }
+.search-input.error-state::placeholder { color: #e11d48 !important; opacity: 1; }   
 .search-input.error-state::-webkit-input-placeholder { color: #e11d48 !important; }
