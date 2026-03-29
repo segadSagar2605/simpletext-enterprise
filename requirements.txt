@@ -4,3 +4,4 @@ pymupdf
 python-docx
 pandas
 openpyxl
+python-multipart

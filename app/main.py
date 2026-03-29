@@ -1,27 +1,12 @@
-import shutil
-import logging
-from pathlib import Path
-from datetime import datetime
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+import shutil
+import os
+from datetime import datetime
+from .database import get_db_conn
+from .services.indexer import background_content_indexing
 
-from app.database import init_db, get_db_conn
-from app.services.indexer import background_content_indexing
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("SimpleText")
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Verifying environment...")
-    Path("uploads").mkdir(parents=True, exist_ok=True)
-    init_db()
-    logger.info("Environment ready. SimpleText Enterprise online.")
-    yield
-    logger.info("Shutting down...")
-
-app = FastAPI(title="SimpleText Enterprise", lifespan=lifespan)
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,56 +15,85 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
 @app.post("/upload")
-async def upload_document(
+async def upload_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form("Untitled"),
-    created_by: str = Form("System"),
+    created_by: str = Form("User"),
     content_summary: str = Form(""),
     doc_type: str = Form("PDF")
 ):
-    file_path = Path("uploads") / file.filename
+    # Save physical file to disk
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # Step 1: Execute B-Tree indexing for Metadata
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO documents (title, created_by, content_summary, doc_type, file_path, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (title, created_by, content_summary, doc_type, file_path, datetime.now().strftime("%Y-%m-%d %H:%M")))
+    conn.commit()
+    conn.close()
+
+    # Step 2: Trigger FTS5 indexing for Content in the background
+    background_tasks.add_task(background_content_indexing, title, content_summary, file_path)
     
-    try:
-        # Save physical file
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        conn = get_db_conn()
-        cursor = conn.cursor()
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        
-        cursor.execute('''
-            INSERT INTO documents (title, created_by, content_summary, doc_type, file_path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (title, created_by, content_summary, doc_type, str(file_path), timestamp))
-        
-        conn.commit()
-        conn.close()
-
-        background_tasks.add_task(background_content_indexing, title, content_summary, str(file_path))
-        
-        return {"status": "success", "message": f"'{title}' ingested successfully"}
-
-    except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+    return {"status": "success"}
 
 @app.get("/get-docs")
 def list_docs():
+    # Standard retrieve for the dashboard using B-Tree index on created_at
     conn = get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT title, created_by, content_summary, doc_type, created_at FROM documents ORDER BY created_at DESC")
+    cursor.execute("""
+        SELECT title, created_by, content_summary, doc_type, created_at, file_path 
+        FROM documents 
+        ORDER BY created_at DESC
+    """)
     rows = cursor.fetchall()
     conn.close()
-    return [{"title": r[0], "author": r[1], "summary": r[2], "type": r[3], "date": r[4]} for r in rows]
+    
+    return [{
+        "title": r[0], "author": r[1], "summary": r[2], 
+        "type": r[3], "date": r[4], "path": r[5]
+    } for r in rows]
+
 
 @app.get("/search")
 def search_docs(q: str):
+    """
+    Finds documents using FTS5 for deep-content matching.
+    Uses a subquery to avoid 'MATCH context' operational errors in SQLite.
+    """
     conn = get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT title FROM doc_search WHERE doc_search MATCH ?", (f"*{q}*",))
-    results = cursor.fetchall()
+    
+    # --- PART 4: FTS5 SUBQUERY ---
+    # We find matching titles in the Virtual Table first, then fetch their metadata.
+    # This is the standard 'Enterprise' way to join FTS5 with B-Tree tables.
+    cursor.execute("""
+        SELECT title, created_by, content_summary, doc_type, created_at, file_path
+        FROM documents
+        WHERE title IN (
+            SELECT title 
+            FROM doc_search 
+            WHERE doc_search MATCH ?
+        )
+    """, (q,))
+    
+    rows = cursor.fetchall()
     conn.close()
-    return [{"title": r[0]} for r in results]
+    
+    # Return the results to the frontend
+    return [{
+        "title": r[0], "author": r[1], "summary": r[2], 
+        "type": r[3], "date": r[4], "path": r[5]
+    } for r in rows]
