@@ -3,223 +3,492 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SimpleText Enterprise | Knowledge Management</title>
+    <title>SimpleText Enterprise | Document Hub</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    
     <style>
         :root {
-            --primary-green: #2e7d32;
-            --dark-green: #1b5e20;
-            --bg-color: #f0f2f5;
-            --card-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            --primary-color: #3b82f6;
+            --primary-dark: #1e40af;
+            --background-base: #f9fafb;
+            --background-secondary: #f3f4f6;
+            --border-subtle: #e5e7eb;
+            --text-primary: #111827;
+            --text-secondary: #6b7280;
+            --text-tertiary: #9ca3af;
+            --success-color: #10b981;
+            --error-color: #ef4444;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
         }
 
-        body { 
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-            margin: 0; padding: 0; background-color: var(--bg-color); color: #333;
+        body, html { 
+            height: 100%; 
+            margin: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif; 
+            overflow: hidden; 
+            background-color: var(--background-base); 
+            color: var(--text-primary);
         }
 
-        /* Top Navigation */
-        .top-bar {
-            background-color: #ffffff; padding: 15px 30px;
-            display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 2px solid #e1e4e8;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        .app-shell { 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
         }
 
-        .brand { font-size: 24px; font-weight: 800; color: var(--primary-green); }
-        .brand span { color: #666; font-weight: 400; font-size: 16px; margin-left: 5px; }
-
-        /* Layout Grid (30/70 Split) */
-        .dashboard-container {
-            display: flex; gap: 25px; padding: 25px; align-items: flex-start;
-            max-width: 1400px; margin: 0 auto;
+        header {
+            height: 64px; 
+            background: #ffffff; 
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex; 
+            align-items: center; 
+            padding: 0 32px; 
+            justify-content: space-between;
+            flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
         }
 
-        /* Sidebar & Main Cards */
-        .sidebar, .main-content {
-            background: white; padding: 25px; border-radius: 12px;
-            box-shadow: var(--card-shadow);
+        .logo { 
+            font-weight: 700; 
+            font-size: 1.25rem; 
+            color: var(--primary-color);
+            letter-spacing: -0.5px;
         }
 
-        .sidebar { flex: 1; min-width: 300px; }
-        .main-content { flex: 3; }
+        .main-content { 
+            display: flex; 
+            flex: 1; 
+            overflow: hidden; 
+        }
 
-        /* Form Styling */
-        h3 { margin-top: 0; color: var(--primary-green); border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        label { font-weight: 600; font-size: 0.85rem; color: #555; display: block; margin-top: 15px; }
+        .sidebar {
+            width: 320px; 
+            background: #ffffff; 
+            border-right: 1px solid var(--border-subtle);
+            padding: 24px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 20px; 
+            flex-shrink: 0;
+            overflow-y: auto;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .sidebar-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sidebar-section-title {
+            font-size: 0.75rem; 
+            font-weight: 700; 
+            color: var(--text-secondary); 
+            text-transform: uppercase; 
+            letter-spacing: 0.5px;
+        }
         
-        input, select, textarea { 
-            width: 100%; padding: 12px; margin-top: 5px; 
-            border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box;
-            font-size: 0.95rem; transition: 0.2s;
+        input, select, textarea {
+            width: 100%; 
+            padding: 10px 12px; 
+            border: 1px solid var(--border-subtle); 
+            border-radius: 8px;
+            font-size: 0.875rem; 
+            box-sizing: border-box;
+            font-family: inherit;
+            background-color: #ffffff;
+            transition: all 0.2s ease;
         }
 
-        input:focus, textarea:focus { border-color: var(--primary-green); outline: none; box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1); }
-
-        button { 
-            width: 100%; background-color: var(--primary-green); color: white; border: none; 
-            padding: 14px; cursor: pointer; border-radius: 8px; font-weight: bold; 
-            font-size: 1rem; margin-top: 25px; transition: all 0.2s;
+        input:focus, select:focus, textarea:focus { 
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
 
-        button:hover { background-color: var(--dark-green); transform: translateY(-1px); }
-
-        /* Search & Table */
-        .search-section input {
-            background-color: #f8f9fa; border: 2px solid #eee; margin-bottom: 25px; font-size: 1.1rem;
+        input::placeholder, textarea::placeholder {
+            color: var(--text-tertiary);
         }
 
-        table { width: 100%; border-collapse: collapse; }
-        th { background-color: #f8f9fa; color: #666; font-size: 0.8rem; text-transform: uppercase; padding: 15px; text-align: left; }
-        td { padding: 15px; border-bottom: 1px solid #f0f0f0; }
-
-        .badge {
-            background-color: #e8f5e9; color: var(--primary-green); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold;
+        .btn-action {
+            background: var(--primary-color); 
+            color: #ffffff; 
+            border: none; 
+            padding: 12px 16px;
+            border-radius: 8px; 
+            font-weight: 600; 
+            cursor: pointer; 
+            margin-top: 8px;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+            box-shadow: var(--shadow-sm);
         }
 
-        #statusMsg { margin-top: 20px; text-align: center; font-weight: bold; font-size: 0.9rem; }
-        .success { color: var(--primary-green); }
-        .error { color: #d32f2f; }
+        .btn-action:hover {
+            background: var(--primary-dark);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-1px);
+        }
+
+        .btn-action:active {
+            transform: translateY(0);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .workspace { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            padding: 16px; 
+            overflow: hidden; 
+            gap: 12px;
+        }
+
+        .workspace-header {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .workspace-header h1 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+        }
+
+        .workspace-header p {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .search-container { 
+            display: flex; 
+            align-items: center; 
+            gap: 0;
+            flex-shrink: 0; 
+            position: relative;
+        }
+
+        .search-input { 
+            font-size: 0.8125rem; 
+            padding: 8px 12px 8px 36px; 
+            border-radius: 8px; 
+            border: 1px solid var(--border-subtle);
+            background-color: #ffffff;
+            transition: all 0.2s ease;
+            min-width: 300px;
+        }
+
+        .search-input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .search-input.error-state {
+            border-color: var(--error-color);
+            background-color: #fef2f2;
+        }
+
+        .search-input.error-state::placeholder {
+            color: var(--error-color);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 11px;
+            color: var(--text-tertiary);
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+
+        .scroll-canvas { 
+            flex: 1; 
+            background: #ffffff; 
+            border: 1px solid var(--border-subtle); 
+            border-radius: 8px; 
+            overflow-y: auto;
+            box-shadow: var(--shadow-sm);
+        }
+
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            font-size: 0.8125rem; 
+            font-family: inherit;
+        }
+        
+        th { 
+            text-align: left; 
+            padding: 8px 12px; 
+            background: #ffffff; 
+            position: sticky; 
+            top: 0; 
+            z-index: 10; 
+            border-bottom: 2px solid #d1d5db;
+            color: var(--text-primary);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+
+        tbody tr {
+            transition: background-color 0.15s ease;
+        }
+
+        tbody tr:hover {
+            background-color: rgba(59, 130, 246, 0.04);
+        }
+
+        td { 
+            padding: 8px 12px; 
+            border-bottom: 1px solid var(--border-subtle); 
+            vertical-align: middle; 
+            font-family: inherit;
+            background-color: #ffffff;
+        }
+
+        td strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .col-summary { 
+            color: var(--text-secondary); 
+            min-width: 220px;
+            width: 30%; 
+            line-height: 1.3;
+            font-size: 0.8125rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: help;
+        }
+
+        .col-path { 
+            color: var(--text-tertiary); 
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.7rem;
+            max-width: 120px; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            white-space: nowrap; 
+        }
+
+        #status-bar { 
+            font-size: 0.8125rem; 
+            font-weight: 500; 
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--success-color);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
     </style>
 </head>
 <body>
 
-    <header class="top-bar">
-        <div class="brand">SimpleText <span>Enterprise Hub</span></div>
+<div class="app-shell">
+    <header>
+        <div class="logo">SimpleText</div>
+        <div id="status-bar">
+            <span class="status-indicator"></span>
+            <span>Connected</span>
+        </div>
     </header>
 
-    <div class="dashboard-container">
-        
-        <section class="sidebar">
-            <h3>Ingest Document</h3>
+    <div class="main-content">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Document Information</div>
+                <input type="text" id="field_title" placeholder="Document Title">
+                <input type="text" id="field_author" placeholder="Author or Owner">
+                <textarea id="field_summary" rows="4" placeholder="Brief summary of content..."></textarea>
+            </div>
             
-            <label>Document Title</label>
-            <input type="text" id="doc_title" placeholder="e.g. Annual Audit 2026">
-
-            <label>Author / Owner</label>
-            <input type="text" id="doc_author" placeholder="Your name...">
-
-            <label>Content Summary</label>
-            <textarea id="doc_summary" rows="3" placeholder="What is this file about?"></textarea>
-
-            <label>File Category</label>
-            <select id="doc_type">
-                <option value="PDF">PDF Document</option>
-                <option value="Word">Word (.docx)</option>
-                <option value="Excel">Excel (.xlsx)</option>
-            </select>
-
-            <label>Select File</label>
-            <input type="file" id="doc_file">
-
-            <button type="button" onclick="uploadDocument()">Ingest to Knowledge Base</button>
-            <p id="statusMsg"></p>
-        </section>
-
-        <main class="main-content">
-            <div class="search-section">
-                <h3>Document Library</h3>
-                <input type="text" id="search_query" placeholder="Search keywords inside files or summaries..." onkeyup="handleSearch()">
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">File Configuration</div>
+                <select id="field_type">
+                    <option value="PDF">PDF Document</option>
+                    <option value="Word">Word (.docx)</option>
+                    <option value="Excel">Excel (.xlsx)</option>
+                </select>
+                
+                <input type="file" id="field_file" style="border: none; padding: 5px 0; cursor: pointer;">
             </div>
 
-            <table id="docTable">
-                <thead>
-                    <tr>
-                        <th>Title</th>
-                        <th>Author</th>
-                        <th>Type</th>
-                        <th>Created At</th>
-                    </tr>
-                </thead>
-                <tbody id="docTableBody">
-                    </tbody>
-            </table>
+            <button class="btn-action" onclick="executeUpload()">Upload Document</button>
+        </aside>
+
+        <main class="workspace">
+            <div class="workspace-header">
+                <h1>Document Library</h1>
+                <p>Manage and search all your ingested documents</p>
+            </div>
+
+            <div class="search-container">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search_bar" 
+                    class="search-input"
+                    placeholder="Search documents..." 
+                    onkeypress="handleKeyPress(event)">
+            </div>
+            
+            <div class="scroll-canvas">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Document Title</th>
+                            <th>Author</th>
+                            <th>Content Summary</th>
+                            <th>Type</th>
+                            <th>Internal Path</th>
+                            <th>Added On</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table_rows">
+                        </tbody>
+                </table>
+            </div>
         </main>
     </div>
+</div>
 
-    <script>
-        const API_URL = "http://127.0.0.1:8000";
+<script>
+    const SERVER_URL = "http://127.0.0.1:8000";
 
-        async function uploadDocument() {
-            const fileInput = document.getElementById('doc_file');
-            const status = document.getElementById('statusMsg');
-            
-            if(!fileInput.files[0]) {
-                status.innerHTML = "<span class='error'>Please select a file.</span>";
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append("file", fileInput.files[0]);
-            formData.append("title", document.getElementById('doc_title').value || "Untitled");
-            formData.append("created_by", document.getElementById('doc_author').value || "System");
-            formData.append("content_summary", document.getElementById('doc_summary').value || "");
-            formData.append("doc_type", document.getElementById('doc_type').value);
-
-            status.innerHTML = "Processing Ingestion...";
-
-            try {
-                const response = await fetch(`${API_URL}/upload`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    status.innerHTML = `<span class='success'>${result.message}</span>`;
-                    loadDashboard();
-                    // Clear file input
-                    fileInput.value = "";
-                } else {
-                    status.innerHTML = `<span class='error'>Error ${response.status}: ${result.detail || 'Upload Failed'}</span>`;
-                }
-            } catch (error) {
-                status.innerHTML = "<span class='error'>Network Error: Is the Backend running?</span>";
-            }
+    /**
+     * Handles the file upload and metadata persistence.
+     */
+    async function executeUpload() {
+        const status = document.getElementById('status-bar');
+        const fileInput = document.getElementById('field_file');
+        
+        if (!fileInput.files[0]) {
+            alert("Please select a file to upload.");
+            return;
         }
 
-        async function loadDashboard() {
-            try {
-                const response = await fetch(`${API_URL}/get-docs`);
-                const docs = await response.json();
-                renderTable(docs);
-            } catch (e) {
-                console.error("Dashboard Load Failed", e);
+        const payload = new FormData();
+        payload.append("file", fileInput.files[0]);
+        payload.append("title", document.getElementById('field_title').value || "Untitled");
+        payload.append("created_by", document.getElementById('field_author').value || "Admin");
+        payload.append("content_summary", document.getElementById('field_summary').value || "");
+        payload.append("doc_type", document.getElementById('field_type').value);
+
+        status.innerText = "Ingesting...";
+        
+        try {
+            const response = await fetch(`${SERVER_URL}/upload`, { method: "POST", body: payload });
+            if (response.ok) {
+                status.innerText = "Upload Successful";
+                refreshLibrary();
+                // Clear inputs for next entry
+                document.getElementById('field_title').value = "";
+                document.getElementById('field_summary').value = "";
+                fileInput.value = "";
             }
+        } catch (error) {
+            status.innerText = "Network Error";
+            console.error(error);
+        }
+    }
+
+    /**
+     * Fetches the complete document list from the backend.
+     */
+    async function refreshLibrary() {
+        try {
+            const response = await fetch(`${SERVER_URL}/get-docs`);
+            const data = await response.json();
+            updateTable(data);
+        } catch (error) {
+            console.error("Failed to load document library", error);
+        }
+    }
+    function handleKeyPress(event) {
+        if (event.key === "Enter") {
+            executeSearch();
+        }
+    }
+    /**
+     * Filters the document list based on the user's search query.
+     */
+async function executeSearch() {
+    const searchInput = document.getElementById('search_bar');
+    const query = searchInput.value;
+
+    // 1. Error Case: Under 3 characters
+    if (query.length > 0 && query.length < 3) {
+        const originalPlaceholder = "Search content and press Enter...";
+        
+        // --- THE FORCE FIX ---
+        searchInput.value = ""; 
+        searchInput.placeholder = "Error: Minimum 3 characters required";
+        searchInput.classList.add('error-state'); 
+
+        setTimeout(() => {
+            searchInput.placeholder = originalPlaceholder;
+            searchInput.classList.remove('error-state');
+        }, 2500);
+        
+        return;
+    }
+
+    // 2. Empty Case (Reset)
+    if (!query.trim()) return refreshLibrary();
+
+    // 3. Normal Search Case
+    try {
+        const response = await fetch(`${SERVER_URL}/search?q=${encodeURIComponent(query)}`);
+        const data = await response.json();
+        updateTable(data);
+    } catch (error) {
+        console.error("Search failed", error);
+    }
+}
+    /**
+     * Renders the document rows into the HTML table.
+     */
+    function updateTable(documents) {
+        const container = document.getElementById('table_rows');
+        
+        if (documents.length === 0) {
+            container.innerHTML = "<tr><td colspan='6' style='text-align:center; padding: 40px; color: #94a3b8;'>No records found.</td></tr>";
+            return;
         }
 
-        async function handleSearch() {
-            const query = document.getElementById('search_query').value;
-            if(query.length < 2) return loadDashboard();
+        container.innerHTML = documents.map(doc => `
+            <tr>
+                <td><strong>${doc.title}</strong></td>
+                <td>${doc.author}</td>
+                <td class="col-summary" title="${(doc.summary || 'No summary available').replace(/"/g, '&quot;')}">${doc.summary || 'No summary available'}</td>
+                <td>${doc.type}</td>
+                <td class="col-path" title="${doc.path}">${doc.path}</td>
+                <td>${doc.date.split(' ')[0]}</td>
+            </tr>
+        `).join('');
+    }
 
-            try {
-                const response = await fetch(`${API_URL}/search?q=${query}`);
-                const results = await response.json();
-                renderTable(results);
-            } catch (e) {
-                console.error("Search Failed", e);
-            }
-        }
-
-        function renderTable(data) {
-            const body = document.getElementById('docTableBody');
-            if (data.length === 0) {
-                body.innerHTML = "<tr><td colspan='4' style='text-align:center;'>No documents found.</td></tr>";
-                return;
-            }
-
-            body.innerHTML = data.map(doc => `
-                <tr>
-                    <td><strong>${doc.title}</strong></td>
-                    <td>${doc.author || "---"}</td>
-                    <td><span class="badge">${doc.type || "N/A"}</span></td>
-                    <td>${doc.date || "Just now"}</td>
-                </tr>
-            `).join('');
-        }
-
-        // Initial Load
-        window.onload = loadDashboard;
-    </script>
+    // Initial data load on page startup
+    window.onload = refreshLibrary;
+</script>
 </body>
 </html>

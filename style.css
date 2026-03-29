@@ -1,33 +1,78 @@
+/* 1. Global Reset & Uniform Font */
 body { 
-    font-family: 'Segoe UI', Tahoma, sans-serif; 
-    margin: 0; padding: 0; background-color: #f4f7f6; 
+    font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif; 
+    font-size: 13px; /* Standard uniform size */
+    margin: 0; padding: 0; 
+    background-color: #f8fafc; 
+    color: #1e293b;
 }
+
+/* 2. Layout Elements */
 .top-bar {
-    background-color: white; padding: 15px 25px;
-    border-bottom: 2px solid #e0e0e0;
+    background-color: white; padding: 12px 25px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex; justify-content: space-between; align-items: center;
 }
-.brand { font-size: 24px; font-weight: bold; color: #1b5e20; }
+
+.brand { font-size: 18px; font-weight: 800; color: #2e7d32; }
+
 .dashboard-container {
-    display: flex; gap: 25px; padding: 25px; align-items: flex-start;
+    display: flex; gap: 20px; padding: 20px; align-items: flex-start;
 }
+
 .sidebar {
-    flex: 1; background: white; padding: 25px; border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    flex: 1; background: white; padding: 20px; border-radius: 8px;
+    border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
+
 .main-content {
-    flex: 3; background: white; padding: 25px; border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    flex: 3; background: white; padding: 20px; border-radius: 8px;
+    border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
-label { font-weight: 600; font-size: 0.9rem; color: #666; display: block; margin-top: 10px; }
+
+/* 3. Form Elements */
+label { font-weight: 700; font-size: 11px; color: #64748b; text-transform: uppercase; margin-top: 10px; display: block; }
+
 input, select, textarea { 
-    width: 100%; padding: 10px; margin: 8px 0 18px 0; 
-    border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;
+    width: 100%; padding: 8px 12px; margin: 6px 0 14px 0; 
+    border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;
+    font-size: 13px; font-family: inherit;
 }
+
 button { 
     width: 100%; background-color: #2e7d32; color: white; border: none; 
-    padding: 12px; cursor: pointer; border-radius: 6px; font-weight: bold;
+    padding: 10px; cursor: pointer; border-radius: 6px; font-weight: 600;
 }
+
 button:hover { background-color: #1b5e20; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 14px; text-align: left; border-bottom: 1px solid #eee; }
-th { background-color: #f8f9fa; color: #555; font-size: 0.85rem; text-transform: uppercase; }
+
+/* 4. Table Optimization (Prevents squashing) */
+table { 
+    width: 100%; border-collapse: collapse; 
+    table-layout: fixed; /* Crucial for controlling column widths */
+}
+
+th, td { 
+    padding: 12px; text-align: left; border-bottom: 1px solid #f1f5f9; 
+    font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+th { background-color: #f8f9fa; color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+
+/* Fixed Column Widths */
+th:nth-child(1), td:nth-child(1) { width: 22%; } /* Title */
+th:nth-child(2), td:nth-child(2) { width: 12%; } /* Author */
+th:nth-child(3), td:nth-child(3) { width: 30%; white-space: normal; } /* Summary gets room */
+th:nth-child(4), td:nth-child(4) { width: 8%; }  /* Type */
+th:nth-child(5), td:nth-child(5) { width: 18%; color: #94a3b8; font-family: monospace; font-size: 11px; } /* Path */
+th:nth-child(6), td:nth-child(6) { width: 10%; text-align: right; } /* Date */
+
+/* 5. Error State Logic */
+.search-input.error-state {
+    border-color: #e11d48 !important;
+    background-color: #fff1f2 !important;
+    color: #e11d48 !important;
+}
+
+.search-input.error-state::placeholder { color: #e11d48 !important; opacity: 1; }
+.search-input.error-state::-webkit-input-placeholder { color: #e11d48 !important; }
