@@ -5,3 +5,5 @@ python-docx
 pandas
 openpyxl
 python-multipart
+chromadb
+sentence-transformers

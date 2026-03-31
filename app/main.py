@@ -5,8 +5,15 @@ import os
 from datetime import datetime
 from .database import get_db_conn
 from .services.indexer import background_content_indexing
+import chromadb
+from sentence_transformers import SentenceTransformer
 
 app = FastAPI()
+
+# Load once on startup to save RAM
+model = SentenceTransformer('all-MiniLM-L6-v2')
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+collection = chroma_client.get_or_create_collection(name="enterprise_docs")
 
 app.add_middleware(
     CORSMiddleware,
@@ -97,3 +104,22 @@ def search_docs(q: str):
         "title": r[0], "author": r[1], "summary": r[2], 
         "type": r[3], "date": r[4], "path": r[5]
     } for r in rows]
+
+@app.post("/ask")
+async def ask_neural_assistant(q: str = Form(...)):
+    """
+    NEURAL SEARCH: This handles the 'Brain' work.
+    It doesn't look for keywords; it looks for answers.
+    """
+    query_vector = model.encode([q]).tolist()
+    
+    results = collection.query(
+        query_embeddings=query_vector,
+        n_results=3
+    )
+    
+    # Return chunks of text as 'answers'
+    return {
+        "answer_context": results['documents'][0],
+        "sources": [m['file_name'] for m in results['metadatas'][0]]
+    }
