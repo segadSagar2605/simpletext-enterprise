@@ -10,3 +10,13 @@ documents.db
 
 # VS Code config
 .vscode/
+
+# --- ADDED THESE FOR RAG ---
+# The Vector Database (Binary and Large)
+chroma_db/
+
+# Hugging Face Model Cache (Where the 400MB model lives)
+.cache/
+
+# Environment variables (If you add API keys later)
+.env
