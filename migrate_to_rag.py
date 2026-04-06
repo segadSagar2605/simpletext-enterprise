@@ -15,7 +15,7 @@ def migrate():
     conn = sqlite3.connect('./documents.db')
     cursor = conn.cursor()
     
-    # CORRECTED: Using 'title' and 'file_path' from your screenshot
+    # CORRECTED: Using 'title' and 'file_path' - earlier code had 'name' which doesn't exist in the schema
     cursor.execute("SELECT id, title, file_path FROM documents")
     files = cursor.fetchall()
 
@@ -25,7 +25,7 @@ def migrate():
         # Pull text using your updated extraction logic
         text = extract_text_from_file(file_path)
         if not text:
-            print(f"   ⚠️ Skipping: No text extracted from {file_path}")
+            print(f"    Skipping: No text extracted from {file_path}")
             continue
 
         # 2. Create chunks (text-only, low RAM impact)
@@ -55,7 +55,7 @@ def migrate():
             del batch_embeddings
             del batch_text
 
-    print("\n✅ Migration Success! Your existing data is now vectorized.")
+    print("\n Migration Success! Your existing data is now vectorized.")
     conn.close()
 
 if __name__ == "__main__":
