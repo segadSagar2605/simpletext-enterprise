@@ -15,7 +15,7 @@ A modular Python framework for document ingestion, metadata management, and full
 
 ## Project Roadmap
 - Modular Backend with a simple and Refined UI
-- Vector Embeddings (ChromaDB) for RAG
+- Vector Embeddings (ChromaDB) for RAG - GEMINI KEY AIzaSyCwz51qIBUyAp0lExO6_1qisLTc2FWd4Aw
 - MCP (Model Context Protocol) Integration
 - Docker Containerization
 - Splunk/ELK Audit Traceability

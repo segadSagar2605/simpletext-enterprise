@@ -137,6 +137,44 @@
             box-shadow: var(--shadow-sm);
         }
 
+        /* Traffic Light UI: Disabled State (Orange) */
+        .btn-action:disabled {
+            background: #f59e0b;
+            cursor: not-allowed;
+            opacity: 0.7;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+            animation: pulse-orange 2s infinite;
+        }
+
+        .btn-action:disabled:hover {
+            background: #f59e0b;
+            transform: none;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+        }
+
+        /* Traffic Light UI: Enabled State (Green) */
+        .btn-action:not(:disabled) {
+            background: var(--primary-color);
+            animation: pulse-green 0.6s ease-out;
+        }
+
+        /* Pulse animations for status indication */
+        @keyframes pulse-orange {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 0.9; }
+        }
+
+        @keyframes pulse-green {
+            0% { 
+                background: var(--success-color);
+                box-shadow: 0 0 12px 3px rgba(16, 185, 129, 0.3);
+            }
+            100% { 
+                background: var(--primary-color);
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+        }
+
         .workspace { 
             flex: 1; 
             display: flex; 
@@ -186,6 +224,34 @@
         .search-input:focus {
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        /* Traffic Light UI: Search Input Disabled (Orange) */
+        .search-input:disabled {
+            background-color: #fee7ce;
+            cursor: not-allowed;
+            opacity: 0.6;
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1);
+            animation: pulse-orange 2s infinite;
+        }
+
+        /* Traffic Light UI: Search Input Enabled (Green Pulse) */
+        .search-input:not(:disabled) {
+            animation: pulse-green-input 0.5s ease-out;
+        }
+
+        @keyframes pulse-green-input {
+            0% { 
+                background-color: #dcfce7;
+                border-color: #10b981;
+                box-shadow: 0 0 8px 2px rgba(16, 185, 129, 0.2);
+            }
+            100% { 
+                background-color: #ffffff;
+                border-color: #d1d5db;
+                box-shadow: none;
+            }
         }
 
         .search-input.error-state {
@@ -359,7 +425,7 @@
                 <textarea id="field_summary" rows="4" placeholder="Brief summary of content..."></textarea>
             </div>
 
-            <button class="btn-action" onclick="executeUpload()">Upload document</button>
+            <button class="btn-action" id="uploadBtn" onclick="executeUpload()" disabled>Upload document</button>
         </aside>
 
         <main class="workspace">
@@ -370,10 +436,11 @@
 
             <div class="search-container">
                 <span class="search-icon">🔍</span>
-                <input type="text" id="search_bar" 
+                <input type="text" id="searchInput" 
                     class="search-input"
                     placeholder="Search documents..." 
-                    onkeypress="handleKeyPress(event)">
+                    onkeypress="handleKeyPress(event)"
+                    disabled>
             </div>
             
             <div class="scroll-canvas">
@@ -384,6 +451,7 @@
                             <th>Author</th>
                             <th>Content Summary</th>
                             <th>Type</th>
+                            <th>Status</th>
                             <th>Internal Path</th>
                             <th>Added On</th>
                         </tr>
@@ -434,6 +502,40 @@
     document.getElementById('field_file').addEventListener('change', handleFileSelect);
 
     /**
+     * Form validation - enables upload button when required fields are filled
+     */
+    function validateForm() {
+        const fileInput = document.getElementById('field_file');
+        const typeSelect = document.getElementById('field_type');
+        const uploadBtn = document.getElementById('uploadBtn');
+        
+        // Check if file is selected
+        const hasFile = fileInput.files && fileInput.files.length > 0;
+        
+        // Check if file type is selected (not placeholder - anything other than PDF which is the default placeholder)
+        const hasType = typeSelect.selectedIndex > 0;
+        
+        // Enable button if both file and type are selected
+        if (hasFile && hasType) {
+            uploadBtn.disabled = false;
+            console.log("✓ Form validation passed - upload button enabled (form completed)");
+        } else {
+            // Only disable if button is not already controlled by system status
+            // Check if there's a system that's managing button state
+            uploadBtn.disabled = true;
+            console.log("✗ Form validation: Missing file or file type");
+        }
+    }
+
+    // Attach form field change handlers for validation
+    document.getElementById('field_file').addEventListener('change', function() {
+        handleFileSelect();
+        validateForm();
+    });
+    
+    document.getElementById('field_type').addEventListener('change', validateForm);
+
+    /**
      * Handles the file upload and metadata persistence.
      */
     async function executeUpload() {
@@ -463,7 +565,9 @@
                 document.getElementById('field_title').value = "";
                 document.getElementById('field_author').value = "";
                 document.getElementById('field_summary').value = "";
+                document.getElementById('field_type').value = "PDF"; // Reset to placeholder
                 fileInput.value = "";
+                validateForm(); // Re-validate form - button will be disabled
             }
         } catch (error) {
             status.innerText = "Network Error";
@@ -491,39 +595,38 @@
     /**
      * Filters the document list based on the user's search query.
      */
-async function executeSearch() {
-    const searchInput = document.getElementById('search_bar');
-    const query = searchInput.value;
+    async function executeSearch() {
+        const searchInput = document.getElementById('searchInput');
+        const query = searchInput.value;
 
-    // 1. Error Case: Under 3 characters
-    if (query.length > 0 && query.length < 3) {
-        const originalPlaceholder = "Search content and press Enter...";
-        
-        // --- THE FORCE FIX ---
-        searchInput.value = ""; 
-        searchInput.placeholder = "Error: Minimum 3 characters required";
-        searchInput.classList.add('error-state'); 
+        // 1. Error Case: Under 3 characters
+        if (query.length > 0 && query.length < 3) {
+            const originalPlaceholder = "Search content and press Enter...";
+            
+            searchInput.value = ""; 
+            searchInput.placeholder = "Error: Minimum 3 characters required";
+            searchInput.classList.add('error-state'); 
 
-        setTimeout(() => {
-            searchInput.placeholder = originalPlaceholder;
-            searchInput.classList.remove('error-state');
-        }, 2500);
-        
-        return;
+            setTimeout(() => {
+                searchInput.placeholder = originalPlaceholder;
+                searchInput.classList.remove('error-state');
+            }, 2500);
+            
+            return;
+        }
+
+        // 2. Empty Case (Reset)
+        if (!query.trim()) return refreshLibrary();
+
+        // 3. Normal Search Case
+        try {
+            const response = await fetch(`${SERVER_URL}/search?q=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            updateTable(data);
+        } catch (error) {
+            console.error("Search failed", error);
+        }
     }
-
-    // 2. Empty Case (Reset)
-    if (!query.trim()) return refreshLibrary();
-
-    // 3. Normal Search Case
-    try {
-        const response = await fetch(`${SERVER_URL}/search?q=${encodeURIComponent(query)}`);
-        const data = await response.json();
-        updateTable(data);
-    } catch (error) {
-        console.error("Search failed", error);
-    }
-}
     /**
      * Truncate summary to 50 characters for display, keep full text in title attribute
      */
@@ -539,7 +642,7 @@ async function executeSearch() {
         const container = document.getElementById('table_rows');
         
         if (documents.length === 0) {
-            container.innerHTML = "<tr><td colspan='6' style='text-align:center; padding: 40px; color: #94a3b8;'>No records found.</td></tr>";
+            container.innerHTML = "<tr><td colspan='7' style='text-align:center; padding: 40px; color: #94a3b8;'>No records found.</td></tr>";
             return;
         }
 
@@ -548,20 +651,213 @@ async function executeSearch() {
             const fullAuthor = (doc.author || 'N/A').replace(/"/g, '&quot;');
             const fullSummary = (doc.summary || 'No summary available').replace(/"/g, '&quot;');
             const displaySummary = truncateSummary(doc.summary || 'No summary available', 50);
+            const statusId = `status-cell-${doc.id}`;
+            const statusColor = getStatusColor(doc.status);
             return `
-            <tr>
+            <tr data-doc-id="${doc.id}">
                 <td class="col-title" title="${fullTitle}"><strong>${doc.title}</strong></td>
                 <td class="col-author" title="${fullAuthor}">${doc.author}</td>
                 <td class="col-summary" title="${fullSummary}">${displaySummary}</td>
                 <td class="col-type" title="${doc.type}">${doc.type}</td>
+                <td id="${statusId}" class="col-status" style="color: ${statusColor}; font-weight: 500;">${doc.status}</td>
                 <td class="col-path" title="${doc.path}">${doc.path}</td>
                 <td>${doc.date.split(' ')[0]}</td>
             </tr>
         `}).join('');
     }
 
+    /**
+     * Get color for status display
+     */
+    function getStatusColor(status) {
+        switch(status) {
+            case 'Pending': return '#f59e0b';  // Orange
+            case 'Indexing': return '#3b82f6';  // Blue
+            case 'Ready': return '#10b981';     // Green
+            case 'Failed': return '#ef4444';    // Red
+            default: return '#6b7280';          // Gray
+        }
+    }
+
     // Initial data load on page startup
-    window.onload = refreshLibrary;
+    window.onload = function() {
+        refreshLibrary();
+        checkSystemStatus();  // Check if system is already ready
+        initializePipelineTracker();
+    };
+
+    /**
+     * Check system status via HTTP endpoint
+     * Enables buttons immediately if AI engine is already ready
+     */
+    async function checkSystemStatus() {
+        try {
+            const response = await fetch(`${SERVER_URL}/status`);
+            const data = await response.json();
+            
+            if (data.ready) {
+                console.log("[Status Check] AI Engine already ready - enabling buttons");
+                const uploadBtn = document.getElementById('uploadBtn');
+                const searchInput = document.getElementById('searchInput');
+                uploadBtn.disabled = false;
+                searchInput.disabled = false;
+                document.getElementById('status-bar').querySelector('span:last-child').textContent = "AI Engine Ready";
+            }
+        } catch (error) {
+            console.log("[Status Check] Could not verify status:", error);
+        }
+    }
+
+    /**
+     * Initialize WebSocket connection for real-time pipeline status with Traffic Light UI
+     */
+    function initializePipelineTracker() {
+        const statusBar = document.getElementById('status-bar');
+        const statusText = statusBar.querySelector('span:last-child');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const searchInput = document.getElementById('searchInput');
+        const WS_URL = "ws://127.0.0.1:8000/ws/pipeline_status";
+        
+        // Traffic Light State: Buttons disabled on page load (orange)
+        let systemReady = false;
+        
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        let resetTimer = null;
+
+        /**
+         * Enable buttons when system is ready (green light)
+         */
+        function enableButtons() {
+            if (systemReady) return;  // Already enabled
+            systemReady = true;
+            
+            uploadBtn.disabled = false;
+            searchInput.disabled = false;
+            
+            console.log("✓ Traffic Light: SYSTEM_READY - Buttons enabled (green)");
+            statusText.textContent = "AI Engine Ready";
+        }
+
+        /**
+         * Disable buttons when system is not ready (orange light)
+         */
+        function disableButtons() {
+            if (!systemReady) return;  // Already disabled
+            systemReady = false;
+            
+            uploadBtn.disabled = true;
+            searchInput.disabled = true;
+            
+            console.log("✗ Traffic Light: System offline - Buttons disabled (orange)");
+            statusText.textContent = "AI Engine Initializing...";
+        }
+
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket(WS_URL);
+                reconnectAttempts = 0;
+                const refreshScheduled = new Set();  // Track which docs are scheduled for refresh
+                
+                ws.onopen = function() {
+                    console.log("✓ WebSocket connected to pipeline status");
+                    statusText.textContent = "Initializing AI Engine...";
+                };
+                
+                ws.onmessage = function(event) {
+                    const packet = JSON.parse(event.data);
+                    const type = packet.type;
+                    const message = packet.message || "Pipeline Update";
+                    const eventData = packet.data || {};
+                    const docId = eventData.doc_id;
+                    const eventName = eventData.event;
+                    
+                    // ===== TRAFFIC LIGHT CONTROL: Listen for SYSTEM_READY =====
+                    if (type === "SYSTEM_READY") {
+                        console.log("[SYSTEM_READY] AI Engine initialized and ready");
+                        enableButtons();
+                        statusText.textContent = "AI Engine Ready";
+                        return;  // Don't process as regular event
+                    }
+                    
+                    // ===== LIVE PULSE STATUS UPDATES =====
+                    if (eventName) {
+                        if (eventName.includes("Embedding")) {
+                            statusText.textContent = `📊 ${eventName}`;
+                        } else if (eventName.includes("Ready")) {
+                            statusText.textContent = "✅ Document ready for search";
+                        } else if (eventName.includes("Indexing")) {
+                            statusText.textContent = "🔄 Indexing in progress...";
+                        } else if (eventName.includes("Failed")) {
+                            statusText.textContent = "❌ Indexing failed";
+                        } else {
+                            statusText.textContent = message;
+                        }
+                    } else {
+                        statusText.textContent = message;
+                    }
+                    
+                    // Update specific row status
+                    if (docId && (eventName.includes("Indexing") || eventName.includes("Ready") || eventName.includes("Failed"))) {
+                        const statusCell = document.getElementById(`status-cell-${docId}`);
+                        if (statusCell) {
+                            let status = "Indexing";
+                            if (eventName.includes("Ready")) {
+                                status = "Ready";
+                            } else if (eventName.includes("Failed")) {
+                                status = "Failed";
+                            } else if (eventName.includes("Pending")) {
+                                status = "Pending";
+                            }
+                            
+                            statusCell.textContent = status;
+                            statusCell.style.color = getStatusColor(status);
+                        }
+                    }
+                    
+                    // DEBOUNCE: Only schedule ONE refresh per document to prevent multiple refreshes
+                    if (eventName && eventName.includes("Ready") && docId && !refreshScheduled.has(docId)) {
+                        refreshScheduled.add(docId);  // Mark this doc as scheduled for refresh
+                        
+                        resetTimer = setTimeout(function() {
+                            console.log(`[Refresh] Refreshing table after document ${docId} ready`);
+                            statusText.textContent = "Ready ✓";
+                            refreshLibrary();  // Single refresh per document
+                            refreshScheduled.delete(docId);  // Allow future refreshes for this doc
+                            resetTimer = null;
+                        }, 2000);  // Reduced from 3000ms for faster feedback
+                    }
+                };
+                
+                ws.onerror = function(error) {
+                    console.error("WebSocket error:", error);
+                    disableButtons();
+                };
+                
+                ws.onclose = function() {
+                    console.log("WebSocket disconnected. Attempting to reconnect...");
+                    disableButtons();
+                    
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 10000);
+                        setTimeout(connectWebSocket, delay);
+                    } else {
+                        statusText.textContent = "Connection Lost";
+                        console.warn("Max reconnection attempts reached");
+                    }
+                };
+            } catch (error) {
+                console.error("Failed to connect WebSocket:", error);
+                disableButtons();
+            }
+        }
+
+        // Initial connection
+        connectWebSocket();
+    }
+
 </script>
 </body>
 </html>
