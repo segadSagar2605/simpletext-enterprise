@@ -1,14 +1,21 @@
 import os
 import sqlite3
 
-# This finds the absolute path to your project root
+# Absolute path to the app/ directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# This ensures the DB always lands in the root folder, not the 'app' folder
-DB_PATH = os.path.join(BASE_DIR, "..", "documents.db")
+# Absolute path to the project root (one level up from app/)
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+# DB always lands in the project root folder regardless of working directory
+DB_PATH = os.path.join(PROJECT_ROOT, "documents.db")
 
 def get_db_conn():
-    """Ensures the database is always created in the project root."""
-    conn = sqlite3.connect(DB_PATH)
+    """Ensures the database is always created in the project root with optimized settings."""
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    
+    # Enable Write-Ahead Logging for better concurrency
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    
     return conn
 
 def init_db():
@@ -29,9 +36,16 @@ def init_db():
             content_summary TEXT,
             doc_type TEXT,
             file_path TEXT,
-            created_at TEXT
+            created_at TEXT,
+            status TEXT DEFAULT 'Pending'
         )
     ''')
+    
+    # Add status column if it doesn't exist (for existing databases)
+    try:
+        cursor.execute("ALTER TABLE documents ADD COLUMN status TEXT DEFAULT 'Pending';")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # B-Tree indexes for fast dashboard performance
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_title ON documents(title)")

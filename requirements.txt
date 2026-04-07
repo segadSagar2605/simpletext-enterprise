@@ -6,5 +6,6 @@ pandas
 openpyxl
 python-multipart
 chromadb
-sentence-transformers
 flashrank
+python-dotenv
+google-genai
