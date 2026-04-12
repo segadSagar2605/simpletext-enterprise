@@ -72,8 +72,70 @@
             flex-direction: column; 
             gap: 16px; 
             flex-shrink: 0;
-            overflow: hidden;
+            overflow: visible;
             box-shadow: var(--shadow-sm);
+            transition: width 0.3s ease, padding 0.3s ease;
+            position: relative;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            padding: 0;
+        }
+
+        .sidebar.collapsed .sidebar-inner {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .sidebar-inner {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            flex: 1;
+            overflow: hidden;
+            transition: opacity 0.15s ease;
+            min-width: 272px;
+        }
+
+        .sidebar-toggle {
+            position: absolute;
+            right: -14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 28px;
+            background: #ffffff;
+            border: 1px solid var(--border-subtle);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            box-shadow: var(--shadow-md);
+            transition: background 0.2s ease, right 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .sidebar-toggle:hover { background: var(--background-secondary); }
+
+        .sidebar-toggle svg {
+            transition: transform 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .sidebar.collapsed .sidebar-toggle {
+            right: -40px;
+        }
+
+        .sidebar.collapsed .sidebar-toggle svg {
+            transform: rotate(180deg);
+        }
+
+        /* Status cell transition — only animate the changing cell, not the row */
+        .status-cell {
+            transition: color 0.4s ease;
         }
 
         .sidebar-section {
@@ -111,6 +173,37 @@
         input::placeholder, textarea::placeholder {
             color: var(--text-tertiary);
         }
+
+        #field_summary {
+            max-height: 100px; /* ~5 rows max */
+            overflow-y: auto;
+            resize: none;
+        }
+
+        .summary-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .ai-label {
+            display: none;
+            font-size: 0.7rem;
+            color: var(--primary-color);
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        .ai-label.visible { display: block; }
+
+        .summary-generating {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            display: none;
+        }
+
+        .summary-generating.visible { display: block; }
 
         .btn-action {
             background: var(--primary-color); 
@@ -406,26 +499,39 @@
     </header>
 
     <div class="main-content">
-        <aside class="sidebar">
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">Add New Document</div>
-                <input type="file" id="field_file" style="border: 1px solid var(--border-subtle); padding: 10px 12px; cursor: pointer; border-radius: 8px;">
-                <select id="field_type" title="Select file type">
-                    <option value="PDF" disabled selected hidden>File Type</option>
-                    <option value="PDF">PDF Document</option>
-                    <option value="Word">Word (.docx)</option>
-                    <option value="Excel">Excel (.xlsx)</option>
-                </select>
-            </div>
+        <aside class="sidebar" id="uploadSidebar">
+            <!-- Toggle chevron button -->
+            <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Toggle upload panel">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M7.5 2L3.5 6L7.5 10" stroke="#6b7280" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
 
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">Document Information</div>
-                <input type="text" id="field_title" placeholder="Document Title">
-                <input type="text" id="field_author" placeholder="Author or Owner">
-                <textarea id="field_summary" rows="4" placeholder="Brief summary of content..."></textarea>
-            </div>
+            <div class="sidebar-inner">
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Add New Document</div>
+                    <input type="file" id="field_file" style="border: 1px solid var(--border-subtle); padding: 10px 12px; cursor: pointer; border-radius: 8px;">
+                    <select id="field_type" title="Select file type">
+                        <option value="PDF" disabled selected hidden>File Type</option>
+                        <option value="PDF">PDF Document</option>
+                        <option value="Word">Word (.docx)</option>
+                        <option value="Excel">Excel (.xlsx)</option>
+                    </select>
+                </div>
 
-            <button class="btn-action" id="uploadBtn" onclick="executeUpload()" disabled>Upload document</button>
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Document Information</div>
+                    <input type="text" id="field_title" placeholder="Document Title">
+                    <input type="text" id="field_author" placeholder="Author or Owner">
+                    <div class="summary-wrapper">
+                        <textarea id="field_summary" rows="4" placeholder="Brief summary of content..."></textarea>
+                        <span class="summary-generating" id="summaryGenerating">✨ Generating AI summary...</span>
+                        <span class="ai-label" id="aiLabel">✨ AI generated — feel free to edit</span>
+                    </div>
+                </div>
+
+                <button class="btn-action" id="uploadBtn" onclick="executeUpload()" disabled>Upload document</button>
+            </div>
         </aside>
 
         <main class="workspace">
@@ -468,33 +574,61 @@
     const SERVER_URL = "http://127.0.0.1:8000";
 
     /**
-     * Auto-capture title and type when a file is selected
+     * Auto-capture title and type when a file is selected.
+     * Also triggers /preview to auto-generate AI summary.
      */
-    function handleFileSelect() {
-        const fileInput = document.getElementById('field_file');
+    async function handleFileSelect() {
+        const fileInput  = document.getElementById('field_file');
         const titleInput = document.getElementById('field_title');
         const typeSelect = document.getElementById('field_type');
-        
-        if (fileInput.files[0]) {
-            const file = fileInput.files[0];
-            const fileName = file.name;
-            const fileExtension = fileName.split('.').pop().toLowerCase();
-            
-            // Auto-populate title with filename (without extension)
-            const titleWithoutExt = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
-            titleInput.value = titleWithoutExt;
-            
-            // Auto-set type based on file extension
-            const extensionMap = {
-                'pdf': 'PDF',
-                'docx': 'Word',
-                'doc': 'Word',
-                'xlsx': 'Excel',
-                'xls': 'Excel'
-            };
-            
-            const detectedType = extensionMap[fileExtension] || 'PDF';
-            typeSelect.value = detectedType;
+        const summaryBox = document.getElementById('field_summary');
+        const aiLabel    = document.getElementById('aiLabel');
+        const generating = document.getElementById('summaryGenerating');
+
+        if (!fileInput.files[0]) return;
+
+        const file          = fileInput.files[0];
+        const fileName      = file.name;
+        const fileExtension = fileName.split('.').pop().toLowerCase();
+
+        // Auto-populate title
+        const titleWithoutExt = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
+        titleInput.value = titleWithoutExt;
+
+        // Auto-set type
+        const extensionMap = { 'pdf': 'PDF', 'docx': 'Word', 'doc': 'Word', 'xlsx': 'Excel', 'xls': 'Excel' };
+        typeSelect.value = extensionMap[fileExtension] || 'PDF';
+
+        // Reset summary state
+        summaryBox.value = '';
+        aiLabel.classList.remove('visible');
+
+        // Only generate summary if no human text already typed
+        if (summaryBox.value.trim() === '') {
+            generating.classList.add('visible');
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`${SERVER_URL}/preview`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.summary) {
+                    summaryBox.value = data.summary;
+                    // Show tooltip on hover for full text
+                    summaryBox.title = data.summary;
+                    aiLabel.classList.add('visible');
+                }
+            } catch (e) {
+                console.warn('[Preview] Summary generation failed:', e);
+            } finally {
+                generating.classList.remove('visible');
+            }
         }
     }
 
@@ -565,7 +699,9 @@
                 document.getElementById('field_title').value = "";
                 document.getElementById('field_author').value = "";
                 document.getElementById('field_summary').value = "";
-                document.getElementById('field_type').value = "PDF"; // Reset to placeholder
+                document.getElementById('field_type').value = "PDF";
+                document.getElementById('aiLabel').classList.remove('visible');
+                document.getElementById('summaryGenerating').classList.remove('visible');
                 fileInput.value = "";
                 validateForm(); // Re-validate form - button will be disabled
             }
@@ -636,34 +772,76 @@
     }
 
     /**
-     * Renders the document rows into the HTML table.
+     * Renders document rows using surgical DOM diffing — no full innerHTML wipe.
+     * Only adds new rows or updates the status cell of existing rows.
+     * This eliminates flickering caused by destroying and recreating DOM nodes on every update.
      */
     function updateTable(documents) {
         const container = document.getElementById('table_rows');
-        
+
         if (documents.length === 0) {
             container.innerHTML = "<tr><td colspan='7' style='text-align:center; padding: 40px; color: #94a3b8;'>No records found.</td></tr>";
             return;
         }
 
-        container.innerHTML = documents.map(doc => {
+        // Clear empty-state placeholder if present
+        const placeholder = container.querySelector('td[colspan]');
+        if (placeholder) container.innerHTML = '';
+
+        // Build a map of currently rendered rows by doc ID
+        const existingRows = {};
+        container.querySelectorAll('tr[data-doc-id]').forEach(row => {
+            existingRows[row.dataset.docId] = row;
+        });
+
+        // Track which IDs are in the new data set
+        const incomingIds = new Set(documents.map(d => String(d.id)));
+
+        // Remove rows that are no longer in the dataset
+        Object.keys(existingRows).forEach(id => {
+            if (!incomingIds.has(id)) existingRows[id].remove();
+        });
+
+        documents.forEach((doc, index) => {
+            const docIdStr = String(doc.id);
             const fullTitle = (doc.title || 'Untitled').replace(/"/g, '&quot;');
             const fullAuthor = (doc.author || 'N/A').replace(/"/g, '&quot;');
             const fullSummary = (doc.summary || 'No summary available').replace(/"/g, '&quot;');
             const displaySummary = truncateSummary(doc.summary || 'No summary available', 50);
-            const statusId = `status-cell-${doc.id}`;
             const statusColor = getStatusColor(doc.status);
-            return `
-            <tr data-doc-id="${doc.id}">
-                <td class="col-title" title="${fullTitle}"><strong>${doc.title}</strong></td>
-                <td class="col-author" title="${fullAuthor}">${doc.author}</td>
-                <td class="col-summary" title="${fullSummary}">${displaySummary}</td>
-                <td class="col-type" title="${doc.type}">${doc.type}</td>
-                <td id="${statusId}" class="col-status" style="color: ${statusColor}; font-weight: 500;">${doc.status}</td>
-                <td class="col-path" title="${doc.path}">${doc.path}</td>
-                <td>${doc.date.split(' ')[0]}</td>
-            </tr>
-        `}).join('');
+
+            if (existingRows[docIdStr]) {
+                // Row exists — only patch the status cell, leave everything else alone
+                const row = existingRows[docIdStr];
+                const statusCell = row.querySelector('.col-status');
+                if (statusCell) {
+                    if (statusCell.textContent !== doc.status) {
+                        statusCell.textContent = doc.status;
+                        statusCell.style.color = statusColor;
+                    }
+                }
+            } else {
+                // New row — create and insert in correct position
+                const tr = document.createElement('tr');
+                tr.dataset.docId = docIdStr;
+                tr.innerHTML = `
+                    <td class="col-title" title="${fullTitle}"><strong>${doc.title}</strong></td>
+                    <td class="col-author" title="${fullAuthor}">${doc.author}</td>
+                    <td class="col-summary" title="${fullSummary}">${displaySummary}</td>
+                    <td class="col-type" title="${doc.type}">${doc.type}</td>
+                    <td class="col-status status-cell" style="color: ${statusColor}; font-weight: 500;">${doc.status}</td>
+                    <td class="col-path" title="${doc.path}">${doc.path}</td>
+                    <td>${doc.date.split(' ')[0]}</td>
+                `;
+                // Insert at correct index position
+                const refNode = container.children[index];
+                if (refNode) {
+                    container.insertBefore(tr, refNode);
+                } else {
+                    container.appendChild(tr);
+                }
+            }
+        });
     }
 
     /**
@@ -798,21 +976,19 @@
                         statusText.textContent = message;
                     }
                     
-                    // Update specific row status
+                    // Update specific row status cell — surgical patch, no re-render
                     if (docId && (eventName.includes("Indexing") || eventName.includes("Ready") || eventName.includes("Failed"))) {
-                        const statusCell = document.getElementById(`status-cell-${docId}`);
-                        if (statusCell) {
-                            let status = "Indexing";
-                            if (eventName.includes("Ready")) {
-                                status = "Ready";
-                            } else if (eventName.includes("Failed")) {
-                                status = "Failed";
-                            } else if (eventName.includes("Pending")) {
-                                status = "Pending";
+                        const row = document.querySelector(`tr[data-doc-id="${docId}"]`);
+                        if (row) {
+                            const statusCell = row.querySelector('.col-status');
+                            if (statusCell) {
+                                let status = "Indexing";
+                                if (eventName.includes("Ready")) status = "Ready";
+                                else if (eventName.includes("Failed")) status = "Failed";
+                                else if (eventName.includes("Pending")) status = "Pending";
+                                statusCell.textContent = status;
+                                statusCell.style.color = getStatusColor(status);
                             }
-                            
-                            statusCell.textContent = status;
-                            statusCell.style.color = getStatusColor(status);
                         }
                     }
                     
@@ -856,6 +1032,15 @@
 
         // Initial connection
         connectWebSocket();
+    }
+
+    /**
+     * Collapse / expand the upload sidebar.
+     * The document library expands to fill the freed space via flexbox.
+     */
+    function toggleSidebar() {
+        const sidebar = document.getElementById('uploadSidebar');
+        sidebar.classList.toggle('collapsed');
     }
 
 </script>

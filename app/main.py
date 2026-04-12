@@ -3,6 +3,8 @@ load_dotenv()  # Must be first — loads GEMINI_API_KEY before any other import 
 
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional
 import shutil
 import os
 import time
@@ -11,7 +13,8 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 from .database import get_db_conn, init_db
-from .services.indexer import background_content_indexing, collection, get_embeddings_batch
+from .services.indexer import background_content_indexing, collection, get_embeddings_batch, generate_summary
+from .services.extraction import extract_text_from_file
 from .utils.logger import log_event, PerformanceTimer
 from .utils.performance_broadcaster import (
     register_broadcast_listener,
@@ -122,6 +125,13 @@ if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
 
+# ============ REQUEST MODELS ============
+
+class AskRequest(BaseModel):
+    q: str
+    doc_type: Optional[str] = None   # reserved for future filtering
+
+
 # ============ ENDPOINTS ============
 
 @app.post("/upload")
@@ -220,8 +230,60 @@ def search_docs(q: str):
     } for r in rows]
 
 
+@app.post("/preview")
+async def preview_document(file: UploadFile = File(...)):
+    """
+    Step 1 of two-step upload.
+    Accepts a file, extracts text, generates AI summary.
+    Returns summary to UI so user can review/edit before uploading.
+    File is NOT saved permanently here — just read and discarded.
+    """
+    import tempfile
+
+    # Write to a temp file so extract_text_from_file can read it
+    suffix = os.path.splitext(file.filename)[-1].lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp_path = tmp.name
+        content = await file.read()
+        tmp.write(content)
+
+    try:
+        full_text = extract_text_from_file(tmp_path)
+        if not full_text:
+            return {"summary": "", "error": "Could not extract text from this file type."}
+
+        # Use smart sampling — same logic as indexer
+        from .services.indexer import recursive_splitter
+        parent_blocks = recursive_splitter(full_text, max_size=1000)
+
+        # Strategic sampling: first + middle + last chunks
+        blocks = [parent_blocks[0]]
+        if len(parent_blocks) > 2:
+            mid = len(parent_blocks) // 3
+            blocks += parent_blocks[mid: mid + 2]
+        if len(parent_blocks) > 1:
+            blocks.append(parent_blocks[-1])
+
+        sample = "\n\n---\n\n".join(blocks)
+
+        title_hint = os.path.splitext(file.filename)[0]
+        summary = generate_summary(sample, title_hint)
+
+        return {"summary": summary, "error": None}
+
+    except Exception as e:
+        return {"summary": "", "error": str(e)}
+    finally:
+        # Clean up temp file
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
 @app.post("/ask")
-async def ask_neural_assistant(q: str = Form(...)):
+async def ask_neural_assistant(request: AskRequest):
+    q = request.q
     # 1. NEURAL SEARCH — embed the query with Gemini (task_type: RETRIEVAL_QUERY)
     result = client.models.embed_content(
         model=GEMINI_EMBED_MODEL,

@@ -9,3 +9,5 @@ chromadb
 flashrank
 python-dotenv
 google-genai
+mcp>=1.27.0
+httpx>=0.28.1
