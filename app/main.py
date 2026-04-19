@@ -330,12 +330,15 @@ async def ask_neural_assistant(request: AskRequest):
         rerank_request = RerankRequest(query=q, passages=passages_for_reranking)
         results = ranker.rerank(rerank_request)
         top_passages = [r['text'] for r in results[:3]]
+        top_scores = [float(round(r['score'], 4)) for r in results[:3]]
     else:
         top_passages = []
+        top_scores = []
 
     return {
         "query": q,
         "retrieved_context": "\n\n---\n\n".join(top_passages),
+        "rerank_scores": top_scores,
         "sources_found": len(passages_for_reranking)
     }
 

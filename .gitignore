@@ -32,3 +32,6 @@ logs/
 
 # Performance logs
 granular_performance.csv
+
+eval_results.csv
+*.zip
