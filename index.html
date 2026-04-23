@@ -670,7 +670,7 @@
      * Handles the file upload and metadata persistence.
      */
     async function executeUpload() {
-        const status = document.getElementById('status-bar');
+        const statusText = document.getElementById('status-bar').querySelector('span:last-child');
         const fileInput = document.getElementById('field_file');
         
         if (!fileInput.files[0]) {
@@ -685,13 +685,13 @@
         payload.append("content_summary", document.getElementById('field_summary').value || "");
         payload.append("doc_type", document.getElementById('field_type').value);
 
-        status.innerText = "Ingesting...";
+        statusText.textContent = "Ingesting...";
         
         try {
             const response = await fetch(`${SERVER_URL}/upload`, { method: "POST", body: payload });
             if (response.ok) {
-                status.innerText = "Upload Successful";
-                setTimeout(() => { status.innerText = "Ready to upload"; }, 2000);
+                statusText.textContent = "Upload Successful";
+                setTimeout(() => { statusText.textContent = "Ready to upload"; }, 2000);
                 refreshLibrary();
                 // Clear inputs for next entry
                 document.getElementById('field_title').value = "";
@@ -704,7 +704,7 @@
                 validateForm(); // Re-validate form - button will be disabled
             }
         } catch (error) {
-            status.innerText = "Network Error";
+            statusText.textContent = "Network Error";
             console.error(error);
         }
     }
