@@ -512,7 +512,7 @@
                     <div class="sidebar-section-title">Add New Document</div>
                     <input type="file" id="field_file" style="border: 1px solid var(--border-subtle); padding: 10px 12px; cursor: pointer; border-radius: 8px;">
                     <select id="field_type" title="Select file type">
-                        <option value="PDF" disabled selected hidden>File Type</option>
+                        <option value="" disabled selected hidden>File Type</option>
                         <option value="PDF">PDF Document</option>
                         <option value="Word">Word (.docx)</option>
                         <option value="Excel">Excel (.xlsx)</option>
@@ -632,9 +632,6 @@
         }
     }
 
-    // Attach file select handler
-    document.getElementById('field_file').addEventListener('change', handleFileSelect);
-
     /**
      * Form validation - enables upload button when required fields are filled
      */
@@ -646,8 +643,8 @@
         // Check if file is selected
         const hasFile = fileInput.files && fileInput.files.length > 0;
         
-        // Check if file type is selected (not placeholder - anything other than PDF which is the default placeholder)
-        const hasType = typeSelect.selectedIndex > 0;
+        // Check if file type is selected (not the empty placeholder)
+        const hasType = typeSelect.value !== "";
         
         // Enable button if both file and type are selected
         if (hasFile && hasType) {
@@ -699,7 +696,7 @@
                 document.getElementById('field_title').value = "";
                 document.getElementById('field_author').value = "";
                 document.getElementById('field_summary').value = "";
-                document.getElementById('field_type').value = "PDF";
+                document.getElementById('field_type').value = "";
                 document.getElementById('aiLabel').classList.remove('visible');
                 document.getElementById('summaryGenerating').classList.remove('visible');
                 fileInput.value = "";
@@ -959,21 +956,17 @@
                         return;  // Don't process as regular event
                     }
                     
-                    // ===== LIVE PULSE STATUS UPDATES =====
+                    // ===== LIVE PULSE STATUS UPDATES (key events only — no flicker) =====
                     if (eventName) {
-                        if (eventName.includes("Embedding")) {
-                            statusText.textContent = `📊 ${eventName}`;
-                        } else if (eventName.includes("Ready")) {
+                        if (eventName.includes("Ready")) {
                             statusText.textContent = "✅ Document ready for search";
-                        } else if (eventName.includes("Indexing")) {
+                        } else if (eventName === "Content Indexing Start") {
                             statusText.textContent = "🔄 Indexing in progress...";
                         } else if (eventName.includes("Failed")) {
                             statusText.textContent = "❌ Indexing failed";
-                        } else {
-                            statusText.textContent = message;
                         }
-                    } else {
-                        statusText.textContent = message;
+                        // Intermediate events (Extraction, Chunking, FTS, Embedding, ChromaDB, DB Commit)
+                        // are intentionally silent to prevent status bar flicker
                     }
                     
                     // Update specific row status cell — surgical patch, no re-render
@@ -992,17 +985,17 @@
                         }
                     }
                     
-                    // DEBOUNCE: Only schedule ONE refresh per document to prevent multiple refreshes
-                    if (eventName && eventName.includes("Ready") && docId && !refreshScheduled.has(docId)) {
-                        refreshScheduled.add(docId);  // Mark this doc as scheduled for refresh
-                        
+                    // DEBOUNCE: Coalesce all "Ready" events into a single refresh
+                    if (eventName && eventName.includes("Ready") && docId) {
+                        refreshScheduled.add(docId);
+                        if (resetTimer) clearTimeout(resetTimer);  // Cancel any pending refresh
                         resetTimer = setTimeout(function() {
-                            console.log(`[Refresh] Refreshing table after document ${docId} ready`);
+                            console.log(`[Refresh] Refreshing table (${refreshScheduled.size} doc(s) ready)`);
                             statusText.textContent = "Ready ✓";
-                            refreshLibrary();  // Single refresh per document
-                            refreshScheduled.delete(docId);  // Allow future refreshes for this doc
+                            refreshLibrary();
+                            refreshScheduled.clear();
                             resetTimer = null;
-                        }, 2000);  // Reduced from 3000ms for faster feedback
+                        }, 2000);
                     }
                 };
                 

@@ -14,8 +14,7 @@ import chromadb
 # ── Gemini setup ─────────────────────────────────────────────────────────────
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 GEMINI_EMBED_MODEL   = "gemini-embedding-001"
-#GEMINI_SUMMARY_MODEL = "gemini-1.5-flash"
-GEMINI_SUMMARY_MODEL = "gemini-3.1-flash-lite-preview"
+GEMINI_SUMMARY_MODEL = "gemini-2.0-flash-lite"
 
 # ── ChromaDB setup ────────────────────────────────────────────────────────────
 _SERVICES_DIR = os.path.dirname(os.path.abspath(__file__))
