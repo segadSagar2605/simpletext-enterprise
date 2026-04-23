@@ -691,6 +691,7 @@
             const response = await fetch(`${SERVER_URL}/upload`, { method: "POST", body: payload });
             if (response.ok) {
                 status.innerText = "Upload Successful";
+                setTimeout(() => { status.innerText = "Ready to upload"; }, 2000);
                 refreshLibrary();
                 // Clear inputs for next entry
                 document.getElementById('field_title').value = "";
