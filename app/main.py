@@ -189,6 +189,22 @@ def list_docs():
     } for r in rows]
 
 
+@app.get("/doc/{doc_id}")
+def get_doc(doc_id: int):
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, title, created_by, content_summary, doc_type, created_at, file_path, status
+        FROM documents WHERE id = ?
+    """, (doc_id,))
+    r = cursor.fetchone()
+    conn.close()
+    if not r:
+        return {}
+    return {"id": r[0], "title": r[1], "author": r[2], "summary": r[3],
+            "type": r[4], "date": r[5], "path": r[6], "status": r[7]}
+
+
 @app.get("/status")
 def system_status():
     """Check if AI engine is ready. With Gemini, this is always instant."""
@@ -205,20 +221,29 @@ def search_docs(q: str):
 
     search_query = f"%{q}%"
 
-    cursor.execute("""
-        SELECT id, title, created_by, content_summary, doc_type, created_at, file_path, status
-        FROM documents
-        WHERE (title LIKE ? OR content_summary LIKE ?)
-        OR id IN (
-            SELECT DISTINCT doc_id 
-            FROM parents 
-            WHERE id IN (
-                SELECT parent_id 
-                FROM doc_search 
-                WHERE content MATCH ?
+    # Try full hybrid search (LIKE + FTS5)
+    try:
+        cursor.execute("""
+            SELECT id, title, created_by, content_summary, doc_type, created_at, file_path, status
+            FROM documents
+            WHERE (title LIKE ? OR content_summary LIKE ?)
+            OR id IN (
+                SELECT DISTINCT doc_id
+                FROM parents
+                WHERE id IN (
+                    SELECT parent_id
+                    FROM doc_search
+                    WHERE content MATCH ?
+                )
             )
-        )
-    """, (search_query, search_query, q))
+        """, (search_query, search_query, q))
+    except Exception:
+        # FTS5 failed (bad query syntax / cold index) — fall back to LIKE only
+        cursor.execute("""
+            SELECT id, title, created_by, content_summary, doc_type, created_at, file_path, status
+            FROM documents
+            WHERE title LIKE ? OR content_summary LIKE ?
+        """, (search_query, search_query))
 
     rows = cursor.fetchall()
     conn.close()

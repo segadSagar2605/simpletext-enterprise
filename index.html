@@ -133,9 +133,10 @@
             transform: rotate(180deg);
         }
 
-        /* Status cell transition — only animate the changing cell, not the row */
+        /* Status cell — no transition; instant color swap avoids paint flicker
+           when multiple status events fire in quick succession. */
         .status-cell {
-            transition: color 0.4s ease;
+            /* color is set inline via JS, no animation */
         }
 
         .sidebar-section {
@@ -397,7 +398,7 @@
         }
 
         tbody tr {
-            transition: background-color 0.15s ease;
+            /* No transition — avoids paint flash during rapid status updates. */
         }
 
         tbody tr:hover {
@@ -542,10 +543,10 @@
 
             <div class="search-container">
                 <span class="search-icon">🔍</span>
-                <input type="text" id="searchInput" 
+                <input type="text" id="searchInput"
                     class="search-input"
-                    placeholder="Search documents..." 
-                    onkeypress="handleKeyPress(event)"
+                    placeholder="Search documents..."
+                    onkeydown="handleKeyPress(event)"
                     disabled>
             </div>
             
@@ -672,28 +673,44 @@
     async function executeUpload() {
         const statusText = document.getElementById('status-bar').querySelector('span:last-child');
         const fileInput = document.getElementById('field_file');
-        
+
         if (!fileInput.files[0]) {
             alert("Please select a file to upload.");
             return;
         }
 
+        const title   = document.getElementById('field_title').value || "Untitled";
+        const author  = document.getElementById('field_author').value || "Admin";
+        const summary = document.getElementById('field_summary').value || "";
+        const docType = document.getElementById('field_type').value;
+
         const payload = new FormData();
         payload.append("file", fileInput.files[0]);
-        payload.append("title", document.getElementById('field_title').value || "Untitled");
-        payload.append("created_by", document.getElementById('field_author').value || "Admin");
-        payload.append("content_summary", document.getElementById('field_summary').value || "");
-        payload.append("doc_type", document.getElementById('field_type').value);
+        payload.append("title", title);
+        payload.append("created_by", author);
+        payload.append("content_summary", summary);
+        payload.append("doc_type", docType);
 
         statusText.textContent = "Ingesting...";
-        
+
         try {
             const response = await fetch(`${SERVER_URL}/upload`, { method: "POST", body: payload });
             if (response.ok) {
+                const data = await response.json();
                 statusText.textContent = "Upload Successful";
                 setTimeout(() => { statusText.textContent = "Ready to upload"; }, 2000);
-                refreshLibrary();
-                // Clear inputs for next entry
+
+                // Insert row directly — no fetch, no flicker
+                insertNewRow({
+                    id: data.doc_id,
+                    title, author, summary,
+                    type: docType,
+                    date: new Date().toISOString().split('T')[0],
+                    path: '—',
+                    status: 'Pending'
+                });
+
+                // Clear inputs
                 document.getElementById('field_title').value = "";
                 document.getElementById('field_author').value = "";
                 document.getElementById('field_summary').value = "";
@@ -701,7 +718,7 @@
                 document.getElementById('aiLabel').classList.remove('visible');
                 document.getElementById('summaryGenerating').classList.remove('visible');
                 fileInput.value = "";
-                validateForm(); // Re-validate form - button will be disabled
+                validateForm();
             }
         } catch (error) {
             statusText.textContent = "Network Error";
@@ -710,28 +727,58 @@
     }
 
     /**
-     * Fetches the complete document list from the backend.
+     * Inserts a single new row at the top of the table without re-rendering anything else.
      */
+    function insertNewRow(doc) {
+        const container = document.getElementById('table_rows');
+        const placeholder = container.querySelector('td[colspan]');
+        if (placeholder) container.innerHTML = '';
+
+        const docIdStr = String(doc.id);
+        if (container.querySelector(`tr[data-doc-id="${docIdStr}"]`)) return;
+
+        const tr = document.createElement('tr');
+        tr.dataset.docId = docIdStr;
+        const fullTitle   = (doc.title || '').replace(/"/g, '&quot;');
+        const fullSummary = (doc.summary || '').replace(/"/g, '&quot;');
+        tr.innerHTML = `
+            <td class="col-title" title="${fullTitle}"><strong>${doc.title}</strong></td>
+            <td class="col-author">${doc.author}</td>
+            <td class="col-summary" title="${fullSummary}">${truncateSummary(doc.summary, 50) || 'Generating...'}</td>
+            <td class="col-type">${doc.type}</td>
+            <td class="col-status status-cell" style="color:${getStatusColor(doc.status)};font-weight:500;">${doc.status}</td>
+            <td class="col-path" title="${doc.path}">${doc.path}</td>
+            <td>${doc.date}</td>
+        `;
+        container.insertBefore(tr, container.firstChild);
+    }
+
+    // Version counter — only the most recent fetch wins, older ones are discarded
+    let tableVersion = 0;
+
     async function refreshLibrary() {
+        const v = ++tableVersion;
         try {
             const response = await fetch(`${SERVER_URL}/get-docs`);
             const data = await response.json();
-            updateTable(data);
+            if (v === tableVersion) updateTable(data);
         } catch (error) {
             console.error("Failed to load document library", error);
         }
     }
     function handleKeyPress(event) {
         if (event.key === "Enter") {
-            executeSearch();
+            // Defer read so browser autocomplete commits its selected value first
+            const input = event.target;
+            setTimeout(() => executeSearch(input.value), 0);
         }
     }
     /**
      * Filters the document list based on the user's search query.
      */
-    async function executeSearch() {
+    async function executeSearch(query) {
         const searchInput = document.getElementById('searchInput');
-        const query = searchInput.value;
+        query = (query !== undefined ? query : searchInput.value);
 
         // 1. Error Case: Under 3 characters
         if (query.length > 0 && query.length < 3) {
@@ -753,10 +800,11 @@
         if (!query.trim()) return refreshLibrary();
 
         // 3. Normal Search Case
+        const v = ++tableVersion;
         try {
             const response = await fetch(`${SERVER_URL}/search?q=${encodeURIComponent(query)}`);
             const data = await response.json();
-            updateTable(data);
+            if (v === tableVersion) updateTable(data, true);
         } catch (error) {
             console.error("Search failed", error);
         }
@@ -774,11 +822,17 @@
      * Only adds new rows or updates the status cell of existing rows.
      * This eliminates flickering caused by destroying and recreating DOM nodes on every update.
      */
-    function updateTable(documents) {
+    function updateTable(documents, allowEmpty = false) {
         const container = document.getElementById('table_rows');
+        const hasRealRows = container.querySelector('tr[data-doc-id]') !== null;
 
         if (documents.length === 0) {
-            container.innerHTML = "<tr><td colspan='7' style='text-align:center; padding: 40px; color: #94a3b8;'>No records found.</td></tr>";
+            // Show "No records" if caller explicitly allows (e.g. a real search),
+            // OR if the table was already empty. Never wipe a populated table
+            // on a transient empty response (that was the flicker bug).
+            if (allowEmpty || !hasRealRows) {
+                container.innerHTML = "<tr><td colspan='7' style='text-align:center; padding: 40px; color: #94a3b8;'>No records found.</td></tr>";
+            }
             return;
         }
 
@@ -938,7 +992,10 @@
                 
                 ws.onopen = function() {
                     console.log("✓ WebSocket connected to pipeline status");
-                    statusText.textContent = "Initializing AI Engine...";
+                    // Only show "Initializing" if /status hasn't already marked us ready.
+                    if (!statusText.textContent.includes("Ready")) {
+                        statusText.textContent = "Initializing AI Engine...";
+                    }
                 };
                 
                 ws.onmessage = function(event) {
@@ -970,33 +1027,43 @@
                         // are intentionally silent to prevent status bar flicker
                     }
                     
-                    // Update specific row status cell — surgical patch, no re-render
-                    if (docId && (eventName.includes("Indexing") || eventName.includes("Ready") || eventName.includes("Failed"))) {
-                        const row = document.querySelector(`tr[data-doc-id="${docId}"]`);
-                        if (row) {
-                            const statusCell = row.querySelector('.col-status');
-                            if (statusCell) {
-                                let status = "Indexing";
-                                if (eventName.includes("Ready")) status = "Ready";
-                                else if (eventName.includes("Failed")) status = "Failed";
-                                else if (eventName.includes("Pending")) status = "Pending";
-                                statusCell.textContent = status;
-                                statusCell.style.color = getStatusColor(status);
+                    // Update specific row status cell — only when value actually changes
+                    if (docId && eventName) {
+                        let newStatus = null;
+                        if (eventName === "Document Ready") newStatus = "Ready";
+                        else if (eventName === "Content Indexing Start") newStatus = "Indexing";
+                        else if (eventName.includes("Failed")) newStatus = "Failed";
+
+                        if (newStatus) {
+                            const row = document.querySelector(`tr[data-doc-id="${docId}"]`);
+                            if (row) {
+                                const statusCell = row.querySelector('.col-status');
+                                if (statusCell && statusCell.textContent !== newStatus) {
+                                    statusCell.textContent = newStatus;
+                                    statusCell.style.color = getStatusColor(newStatus);
+                                }
                             }
                         }
                     }
                     
-                    // DEBOUNCE: Coalesce all "Ready" events into a single refresh
+                    // On Ready: update only the specific row, no full table re-render
                     if (eventName && eventName.includes("Ready") && docId) {
-                        refreshScheduled.add(docId);
-                        if (resetTimer) clearTimeout(resetTimer);  // Cancel any pending refresh
-                        resetTimer = setTimeout(function() {
-                            console.log(`[Refresh] Refreshing table (${refreshScheduled.size} doc(s) ready)`);
-                            statusText.textContent = "Ready ✓";
-                            refreshLibrary();
-                            refreshScheduled.clear();
+                        if (resetTimer) clearTimeout(resetTimer);
+                        resetTimer = setTimeout(async function() {
+                            statusText.textContent = "AI Engine Ready";
+                            const doc = await fetch(`${SERVER_URL}/doc/${docId}`).then(r => r.json());
+                            if (!doc.id) return;
+                            const row = document.querySelector(`tr[data-doc-id="${docId}"]`);
+                            if (row) {
+                                row.querySelector('.col-summary').textContent = truncateSummary(doc.summary, 50);
+                                row.querySelector('.col-summary').title = doc.summary || '';
+                                row.querySelector('.col-path').textContent = doc.path || '—';
+                                row.querySelector('.col-path').title = doc.path || '';
+                                row.querySelector('.col-status').textContent = doc.status;
+                                row.querySelector('.col-status').style.color = getStatusColor(doc.status);
+                            }
                             resetTimer = null;
-                        }, 2000);
+                        }, 1500);
                     }
                 };
                 
