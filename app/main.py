@@ -4,7 +4,7 @@ load_dotenv()  # Must be first — loads GEMINI_API_KEY before any other import 
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 import shutil
 import os
 import time
@@ -24,6 +24,7 @@ from .utils.performance_broadcaster import (
 )
 from contextlib import asynccontextmanager
 from flashrank import Ranker, RerankRequest
+import uuid
 
 # ============ GEMINI SETUP ============
 # 1. Use the default client initialization that worked in your script
@@ -127,9 +128,15 @@ if not os.path.exists(UPLOAD_DIR):
 
 # ============ REQUEST MODELS ============
 
+class ConversationTurn(BaseModel):
+    role: str        # 'user' or 'assistant'
+    content: str
+
 class AskRequest(BaseModel):
     q: str
     doc_type: Optional[str] = None   # reserved for future filtering
+    session_id: Optional[str] = None      # UUID for conversation thread
+    conversation_history: List[ConversationTurn] = []  # previous turn
 
 
 # ============ ENDPOINTS ============
@@ -309,6 +316,13 @@ async def preview_document(file: UploadFile = File(...)):
 @app.post("/ask")
 async def ask_neural_assistant(request: AskRequest):
     q = request.q
+    session_id = request.session_id or str(uuid.uuid4())
+    # SLIDING WINDOW — cap history to last 10 turns to protect LLM context window
+    # Older turns remain in SQLite but are not sent to the model
+    MAX_HISTORY_TURNS = 10
+    history = request.conversation_history[-MAX_HISTORY_TURNS:]
+    conn = get_db_conn()                                   
+    cursor = conn.cursor()   
     # 1. NEURAL SEARCH — embed the query with Gemini (task_type: RETRIEVAL_QUERY)
     result = client.models.embed_content(
         model=GEMINI_EMBED_MODEL,
@@ -320,8 +334,6 @@ async def ask_neural_assistant(request: AskRequest):
     vector_results = collection.query(query_embeddings=query_vector, n_results=5)
 
     # 2. KEYWORD SEARCH (SQLite FTS5)
-    conn = get_db_conn()
-    cursor = conn.cursor()
 
     clean_q = q.replace('"', ' ').strip()
 
@@ -348,7 +360,7 @@ async def ask_neural_assistant(request: AskRequest):
         row = cursor.fetchone()
         if row:
             passages_for_reranking.append({"id": p_id, "text": row[0]})
-    conn.close()
+    
 
     # 5. LIGHTWEIGHT RERANKING
     if passages_for_reranking:
@@ -360,11 +372,54 @@ async def ask_neural_assistant(request: AskRequest):
         top_passages = []
         top_scores = []
 
+    # 6. SAVE TO MEMORY
+    now = datetime.now().isoformat()
+    cursor.execute(
+        "INSERT INTO conversation_memory (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+        (session_id, "user", q, now)
+    )
+    cursor.execute(
+        "INSERT INTO conversation_memory (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+        (session_id, "assistant", "\n\n---\n\n".join(top_passages), now)
+    )
+    conn.commit()
+    conn.close()
+
     return {
         "query": q,
+        "session_id": session_id,
         "retrieved_context": "\n\n---\n\n".join(top_passages),
         "rerank_scores": top_scores,
-        "sources_found": len(passages_for_reranking)
+        "sources_found": len(passages_for_reranking),
+        "history": [{"role": h.role, "content": h.content} for h in history]
+        
+    }
+
+# ============ HISTORY ENDPOINT ============
+@app.get("/history/{session_id}")
+def get_conversation_history(session_id: str):
+    """
+    Retrieves all conversation turns for a given session_id.
+    Used to restore context at the start of a new session.
+    Returns turns in chronological order (oldest first).
+    """
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT role, content, created_at
+        FROM conversation_memory
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+    """, (session_id,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {
+        "session_id": session_id,
+        "turns": [
+            {"role": r[0], "content": r[1], "created_at": r[2]}
+            for r in rows
+        ]
     }
 
 

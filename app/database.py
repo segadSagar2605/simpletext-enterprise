@@ -64,6 +64,7 @@ def init_db():
         )
     ''')
 
+
     # --- VIRTUAL TABLE (FTS5 Keyword Search) ---
     # UPDATED: Links directly to parents for pinpoint accuracy.
     # parent_id is UNINDEXED: we retrieve it but don't waste memory searching it.
@@ -73,6 +74,29 @@ def init_db():
         USING fts5(parent_id UNINDEXED, content);
     ''')    
     
+    # --- CONVERSATION MEMORY TABLE ---
+    # Stores per-session conversation history for cross-session persistence.
+    # Each row is one turn — either 'user' question or 'assistant' response.
+    # session_id: UUID generated per conversation thread (not per user login)
+    # role: strictly 'user' or 'assistant' — enforced in application layer
+    # Older records can be summarized and archived — memory has a different
+    # lifecycle than documents, which is why it lives in its own table.
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS conversation_memory (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  TEXT NOT NULL,
+            user_id     TEXT NOT NULL DEFAULT 'default',
+            role        TEXT NOT NULL,
+            content     TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_id ON conversation_memory(session_id)")
+
+
+
+
     conn.commit()
     conn.close()
     print("Database Blueprint updated successfully with Parent-Child support.")
