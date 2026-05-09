@@ -34,7 +34,7 @@ client = genai.Client(
 
 # 2. Use the EXACT name found by your checkmodels.py script
 GEMINI_EMBED_MODEL = "gemini-embedding-001"
-
+GEMINI_GEN_MODEL = "gemini-2.5-flash-lite"
 # ============ RERANKER ============
 ranker = Ranker(model_name="ms-marco-TinyBERT-L-2-v2", cache_dir="/tmp")
 
@@ -70,6 +70,53 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+
+# ============ QUERY REWRITING (Option C) ============
+# Detects ambiguous queries and rewrites them using condensed history.
+# condensed_history: pre-joined summaries from DB — not raw chunks.
+# Returns original query if self-contained or no history available.
+
+def rewrite_query_if_needed(query: str, condensed_history: str) -> str:
+
+    # If no history — nothing to rewrite against, return as-is
+    if not condensed_history.strip():
+        return query
+
+    prompt = f"""You are a query rewriting assistant for an enterprise document search system.
+
+Given this conversation context:
+{condensed_history}
+
+And this new question:
+{query}
+
+Your job:
+1. Decide if the question is self-contained and unambiguous on its own.
+2. If YES — return the original question exactly as-is.
+3. If NO — rewrite it into a complete, self-contained question using the context above.
+4. If the question is on a completely different topic from the context — return it as-is.
+
+Rules:
+- Return ONLY the final question. No explanation. No preamble.
+- Never add information not present in the context or question.
+- Keep the rewritten question concise and specific.
+
+Final question:"""
+
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_GEN_MODEL,
+            contents=prompt
+        )
+        rewritten = response.text.strip()
+
+        # Safety check — if Gemini returns empty, fall back to original
+        return rewritten if rewritten else query
+
+    except Exception as e:
+        # Never break the pipeline — fall back to original query on any error
+        print(f"[Query Rewriting] Gemini error: {e}")
+        return query
 
 # ============ BROADCAST HANDLER ============
 async def websocket_broadcast_handler(event_data: dict):
@@ -322,7 +369,23 @@ async def ask_neural_assistant(request: AskRequest):
     MAX_HISTORY_TURNS = 10
     history = request.conversation_history[-MAX_HISTORY_TURNS:]
     conn = get_db_conn()                                   
-    cursor = conn.cursor()   
+    cursor = conn.cursor()
+
+    # 0. QUERY REWRITING (Option C)
+    # Load summaries from DB for this session — not raw chunks
+    # Join into condensed history and rewrite if query is ambiguous
+    cursor.execute("""
+        SELECT summary FROM conversation_memory
+        WHERE session_id = ? AND role = 'assistant' AND summary IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT ?
+    """, (session_id, MAX_HISTORY_TURNS))
+    summary_rows = cursor.fetchall()
+    condensed_history = " | ".join([row[0] for row in reversed(summary_rows)])
+    q = rewrite_query_if_needed(q, condensed_history)
+
+
+
     # 1. NEURAL SEARCH — embed the query with Gemini (task_type: RETRIEVAL_QUERY)
     result = client.models.embed_content(
         model=GEMINI_EMBED_MODEL,
@@ -372,15 +435,39 @@ async def ask_neural_assistant(request: AskRequest):
         top_passages = []
         top_scores = []
 
-    # 6. SAVE TO MEMORY
+    # 6. SAVE TO MEMORY (Option C — summarise at save time)
+    # Generate a compact summary of this turn before saving.
+    # This summary is used by the query rewriter next turn — not raw chunks.
     now = datetime.now().isoformat()
+    assistant_content = "\n\n---\n\n".join(top_passages)
+
+    # Generate turn summary — one Gemini call, invisible to user
+    try:
+        summary_prompt = f"""Summarise this Q&A turn in under 100 words.
+                            Focus on key entities, decisions, and conclusions only.
+                            Return ONLY the summary. No preamble.
+
+                            Q: {q}
+                            A: {assistant_content[:2000]}"""
+
+        summary_response = client.models.generate_content(
+            model=GEMINI_GEN_MODEL,
+            contents=summary_prompt
+        )
+        turn_summary = summary_response.text.strip()
+    except Exception as e:
+        print(f"[Summary Generation] Gemini error: {e}")
+        turn_summary = None
+
+    # Save user turn — no summary needed for user questions
     cursor.execute(
         "INSERT INTO conversation_memory (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
         (session_id, "user", q, now)
     )
+    # Save assistant turn WITH summary
     cursor.execute(
-        "INSERT INTO conversation_memory (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-        (session_id, "assistant", "\n\n---\n\n".join(top_passages), now)
+        "INSERT INTO conversation_memory (session_id, role, content, summary, created_at) VALUES (?, ?, ?, ?, ?)",
+        (session_id, "assistant", assistant_content, turn_summary, now)
     )
     conn.commit()
     conn.close()
@@ -388,11 +475,10 @@ async def ask_neural_assistant(request: AskRequest):
     return {
         "query": q,
         "session_id": session_id,
-        "retrieved_context": "\n\n---\n\n".join(top_passages),
+        "retrieved_context": assistant_content,
         "rerank_scores": top_scores,
         "sources_found": len(passages_for_reranking),
         "history": [{"role": h.role, "content": h.content} for h in history]
-        
     }
 
 # ============ HISTORY ENDPOINT ============

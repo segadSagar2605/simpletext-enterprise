@@ -13,8 +13,9 @@ import chromadb
 
 # ── Gemini setup ─────────────────────────────────────────────────────────────
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-GEMINI_EMBED_MODEL   = "gemini-embedding-001"
-GEMINI_SUMMARY_MODEL = "gemini-2.5-flash"
+GEMINI_EMBED_MODEL = "gemini-embedding-001"
+GEMINI_GEN_MODEL = "gemini-2.5-flash-lite"
+
 
 # ── ChromaDB setup ────────────────────────────────────────────────────────────
 _SERVICES_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -62,7 +63,7 @@ def generate_summary(text_sample: str, doc_title: str = None) -> str:
         )
 
         response = client.models.generate_content(
-            model=GEMINI_SUMMARY_MODEL,
+            model=GEMINI_GEN_MODEL,
             contents=prompt,
         )
 
