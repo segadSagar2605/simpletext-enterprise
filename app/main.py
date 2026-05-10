@@ -25,6 +25,7 @@ from .utils.performance_broadcaster import (
 from contextlib import asynccontextmanager
 from flashrank import Ranker, RerankRequest
 import uuid
+from .agent.graph import run_agent
 
 # ============ GEMINI SETUP ============
 # 1. Use the default client initialization that worked in your script
@@ -507,6 +508,21 @@ def get_conversation_history(session_id: str):
             for r in rows
         ]
     }
+
+
+# ============ AGENT ENDPOINT ============
+@app.post("/agent")
+async def run_agent_endpoint(request: AskRequest):
+    """
+    Agentic endpoint — routes query through LangGraph.
+    Router decides: RAG only, web search only, or both in parallel.
+    Returns synthesised final answer.
+    """
+    result = run_agent(
+        query=request.q,
+        session_id=request.session_id
+    )
+    return result
 
 
 # ============ WEBSOCKET ENDPOINT ============

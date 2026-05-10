@@ -42,7 +42,7 @@ echo [*] API Docs: http://127.0.0.1:8000/docs
 echo [*] Database: ./documents.db
 echo [*] Press Ctrl+C to stop
 echo.
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 REM Cleanup on exit
 echo.
