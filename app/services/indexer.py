@@ -3,6 +3,7 @@ import os
 from google import genai
 from google.genai import types
 from .extraction import extract_text_from_file
+from .graph_builder import build_graph_for_document
 from ..database import get_db_conn
 from ..utils.logger import log_event, PerformanceTimer
 from ..utils.performance_broadcaster import (
@@ -271,6 +272,22 @@ def background_content_indexing(doc_id: int, file_path: str, doc_title: str = No
                 "INSERT INTO doc_search (parent_id, content) VALUES (?, ?)",
                 (parent_id, p_text),
             )
+
+    # ── Phase 4b: Graph extraction ────────────────────────────────────────────
+    # Runs on the same parent chunks just inserted into FTS.
+    # Uses the open conn so graph entities/edges are committed in Phase 7
+    # alongside the rest — one atomic commit for the whole document.
+    # Failure here is logged but never blocks the rest of the pipeline.
+    try:
+        build_graph_for_document(
+            doc_id=doc_id,
+            parent_ids=all_parent_ids,
+            parent_texts=all_parent_texts,
+            doc_title=doc_title,
+            conn=conn,
+        )
+    except Exception as e:
+        print(f"[GraphBuilder] Non-fatal error during indexing of doc_id={doc_id}: {e}")
 
     # ── Phase 5: Batch embedding ──────────────────────────────────────────────
     all_embeddings: list = []

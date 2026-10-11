@@ -572,7 +572,7 @@
 </div>
 
 <script>
-    const SERVER_URL = "http://127.0.0.1:8000";
+    const SERVER_URL = location.protocol === "file:" ? "http://127.0.0.1:8000" : location.origin;
 
     /**
      * Auto-capture title and type when a file is selected.
@@ -946,7 +946,9 @@
         const statusText = statusBar.querySelector('span:last-child');
         const uploadBtn = document.getElementById('uploadBtn');
         const searchInput = document.getElementById('searchInput');
-        const WS_URL = "ws://127.0.0.1:8000/ws/pipeline_status";
+        const WS_URL = location.protocol === "file:"
+        ? "ws://127.0.0.1:8000/ws/pipeline_status"
+        : (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/pipeline_status";
         
         // Traffic Light State: Buttons disabled on page load (orange)
         let systemReady = false;
