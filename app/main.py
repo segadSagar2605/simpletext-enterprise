@@ -15,6 +15,7 @@ from google.genai import types
 from .database import get_db_conn, init_db
 from .services.indexer import background_content_indexing, collection, get_embeddings_batch, generate_summary
 from .services.extraction import extract_text_from_file
+from .services.rag import run_ask
 from .utils.logger import log_event, PerformanceTimer
 from .utils.performance_broadcaster import (
     register_broadcast_listener,
@@ -23,7 +24,6 @@ from .utils.performance_broadcaster import (
     event_broadcaster_task
 )
 from contextlib import asynccontextmanager
-from flashrank import Ranker, RerankRequest
 import uuid
 from .agent.graph import run_agent
 
@@ -36,10 +36,6 @@ client = genai.Client(
 # 2. Use the EXACT name found by your checkmodels.py script
 GEMINI_EMBED_MODEL = "gemini-embedding-001"
 GEMINI_GEN_MODEL = "gemini-2.5-flash-lite"
-# ============ RERANKER ============
-ranker = Ranker(model_name="ms-marco-TinyBERT-L-2-v2", cache_dir="/tmp")
-
-
 # ============ WEBSOCKET CONNECTION MANAGER ============
 class ConnectionManager:
     """Manages active WebSocket connections for pipeline status broadcasting."""
@@ -363,124 +359,13 @@ async def preview_document(file: UploadFile = File(...)):
 
 @app.post("/ask")
 async def ask_neural_assistant(request: AskRequest):
-    q = request.q
     session_id = request.session_id or str(uuid.uuid4())
-    # SLIDING WINDOW — cap history to last 10 turns to protect LLM context window
-    # Older turns remain in SQLite but are not sent to the model
-    MAX_HISTORY_TURNS = 10
-    history = request.conversation_history[-MAX_HISTORY_TURNS:]
-    conn = get_db_conn()                                   
-    cursor = conn.cursor()
-
-    # 0. QUERY REWRITING (Option C)
-    # Load summaries from DB for this session — not raw chunks
-    # Join into condensed history and rewrite if query is ambiguous
-    cursor.execute("""
-        SELECT summary FROM conversation_memory
-        WHERE session_id = ? AND role = 'assistant' AND summary IS NOT NULL
-        ORDER BY created_at DESC
-        LIMIT ?
-    """, (session_id, MAX_HISTORY_TURNS))
-    summary_rows = cursor.fetchall()
-    condensed_history = " | ".join([row[0] for row in reversed(summary_rows)])
-    q = rewrite_query_if_needed(q, condensed_history)
-
-
-
-    # 1. NEURAL SEARCH — embed the query with Gemini (task_type: RETRIEVAL_QUERY)
-    result = client.models.embed_content(
-        model=GEMINI_EMBED_MODEL,
-        contents=q,
-        config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
+    return run_ask(
+        q=request.q,
+        session_id=session_id,
+        doc_type=request.doc_type,
+        conversation_history=request.conversation_history,
     )
-    query_vector = [result.embeddings[0].values]
-
-    vector_results = collection.query(query_embeddings=query_vector, n_results=5)
-
-    # 2. KEYWORD SEARCH (SQLite FTS5)
-
-    clean_q = q.replace('"', ' ').strip()
-
-    if not clean_q:
-        keyword_ids = []
-    else:
-        fts_query = f'"{clean_q}"'
-        try:
-            cursor.execute("SELECT parent_id FROM doc_search WHERE doc_search MATCH ? LIMIT 5", (fts_query,))
-            keyword_ids = [row[0] for row in cursor.fetchall()]
-        except Exception as e:
-            print(f"FTS5 Search Error: {e}")
-            keyword_ids = []
-
-    # 3. IDENTITY FUSION (Deduplication)
-    candidate_parent_ids = set(keyword_ids)
-    for metadata in vector_results['metadatas'][0]:
-        candidate_parent_ids.add(metadata['parent_id'])
-
-    # 4. PARENT RETRIEVAL (Fetching Full Context)
-    passages_for_reranking = []
-    for p_id in candidate_parent_ids:
-        cursor.execute("SELECT content FROM parents WHERE id = ?", (p_id,))
-        row = cursor.fetchone()
-        if row:
-            passages_for_reranking.append({"id": p_id, "text": row[0]})
-    
-
-    # 5. LIGHTWEIGHT RERANKING
-    if passages_for_reranking:
-        rerank_request = RerankRequest(query=q, passages=passages_for_reranking)
-        results = ranker.rerank(rerank_request)
-        top_passages = [r['text'] for r in results[:3]]
-        top_scores = [float(round(r['score'], 4)) for r in results[:3]]
-    else:
-        top_passages = []
-        top_scores = []
-
-    # 6. SAVE TO MEMORY (Option C — summarise at save time)
-    # Generate a compact summary of this turn before saving.
-    # This summary is used by the query rewriter next turn — not raw chunks.
-    now = datetime.now().isoformat()
-    assistant_content = "\n\n---\n\n".join(top_passages)
-
-    # Generate turn summary — one Gemini call, invisible to user
-    try:
-        summary_prompt = f"""Summarise this Q&A turn in under 100 words.
-                            Focus on key entities, decisions, and conclusions only.
-                            Return ONLY the summary. No preamble.
-
-                            Q: {q}
-                            A: {assistant_content[:2000]}"""
-
-        summary_response = client.models.generate_content(
-            model=GEMINI_GEN_MODEL,
-            contents=summary_prompt
-        )
-        turn_summary = summary_response.text.strip()
-    except Exception as e:
-        print(f"[Summary Generation] Gemini error: {e}")
-        turn_summary = None
-
-    # Save user turn — no summary needed for user questions
-    cursor.execute(
-        "INSERT INTO conversation_memory (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-        (session_id, "user", q, now)
-    )
-    # Save assistant turn WITH summary
-    cursor.execute(
-        "INSERT INTO conversation_memory (session_id, role, content, summary, created_at) VALUES (?, ?, ?, ?, ?)",
-        (session_id, "assistant", assistant_content, turn_summary, now)
-    )
-    conn.commit()
-    conn.close()
-
-    return {
-        "query": q,
-        "session_id": session_id,
-        "retrieved_context": assistant_content,
-        "rerank_scores": top_scores,
-        "sources_found": len(passages_for_reranking),
-        "history": [{"role": h.role, "content": h.content} for h in history]
-    }
 
 # ============ HISTORY ENDPOINT ============
 @app.get("/history/{session_id}")
@@ -518,11 +403,12 @@ async def run_agent_endpoint(request: AskRequest):
     Router decides: RAG only, web search only, or both in parallel.
     Returns synthesised final answer.
     """
-    result = run_agent(
-        query=request.q,
-        session_id=request.session_id
+    session_id = request.session_id or str(uuid.uuid4())
+    return await asyncio.to_thread(
+        run_agent,
+        request.q,
+        session_id,
     )
-    return result
 
 
 # ============ WEBSOCKET ENDPOINT ============

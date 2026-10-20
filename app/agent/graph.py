@@ -1,10 +1,15 @@
 import os                                    # read API keys from environment
+import uuid
 from typing import TypedDict                 # structured state definition
+from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END  # graph container and terminal node
 from tavily import TavilyClient              # web search API for external queries
 from google import genai                     # Gemini for routing and synthesis
-import httpx                                 # HTTP client for calling FastAPI backend
 from langgraph.types import Send             # type for sending messages between nodes, used for parallel execution
+
+load_dotenv()
+
+from app.services.rag import run_ask
 
 # ============ AGENT STATE ============
 # Shared state object that flows through every node in the graph.
@@ -15,6 +20,7 @@ class AgentState(TypedDict):
     query:            str   # user's question
     routing_decision: str   # 'rag', 'web_search', or 'both'
     rag_result:       str   # output from RAG node
+    rag_error:        str   # clear error marker if document search fails
     web_result:       str   # output from web search node
     final_answer:     str   # synthesised answer
     session_id:       str   # for memory
@@ -27,7 +33,6 @@ gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
 GEMINI_GEN_MODEL = "gemini-2.5-flash-lite"  # consistent with main.py
-BACKEND_URL = "http://127.0.0.1:8000"        # FastAPI backend
 
 
 # ============ ROUTER NODE ============
@@ -75,30 +80,27 @@ Answer:"""
 
 def rag_node(state: AgentState) -> dict:
     query = state["query"]
-    session_id = state["session_id"]
+    session_id = state.get("session_id") or ""
 
     try:
-        response = httpx.post(
-            f"{BACKEND_URL}/ask",
-            json={
-                "q": query,
-                "session_id": session_id,
-                "conversation_history": []
-            },
-            timeout=30.0
+        data = run_ask(
+            q=query,
+            session_id=session_id,
+            doc_type=None,
+            conversation_history=[]
         )
-        response.raise_for_status()
-        data = response.json()
         return {
             "rag_result": data.get("retrieved_context", ""),
-            "session_id": data.get("session_id", session_id)  # capture new session_id
+            "rag_error": "",
+            "session_id": data.get("session_id", session_id),
         }
 
     except Exception as e:
         print(f"[RAG Node] Error: {e}")
         return {
             "rag_result": "",
-            "session_id": session_id  # preserve existing session_id on failure
+            "rag_error": "Document search failed.",
+            "session_id": session_id,
         }
 
 # ============ WEB SEARCH NODE ============
@@ -126,8 +128,29 @@ def synthesiser_node(state: AgentState) -> dict:
     query = state["query"]
     rag_result = state.get("rag_result", "")
     web_result = state.get("web_result", "")
+    rag_error = state.get("rag_error", "")
 
-    prompt = f"""You are an expert enterprise analyst.
+    if rag_error:
+        if web_result:
+            failure_header = "Document search failed. I can answer from the web context below, but the internal document lookup did not succeed.\n\n"
+            web_context = web_result[:3000]
+            prompt = f"""You are an expert enterprise analyst.
+
+User question: {query}
+
+Important: The internal document search failed. This answer should clearly state that and still answer using the web context only.
+
+{failure_header}
+
+External web context:
+{web_context}
+
+Provide a concise answer and clearly mark that the document search failed.
+Answer:"""
+        else:
+            return {"final_answer": "Document search failed. I could not retrieve the internal enterprise documents for this question."}
+    else:
+        prompt = f"""You are an expert enterprise analyst.
 
 User question: {query}
 
@@ -148,10 +171,15 @@ Answer:"""
             model=GEMINI_GEN_MODEL,
             contents=prompt
         )
-        return {"final_answer": response.text.strip()}
+        answer = response.text.strip()
+        if rag_error and web_result:
+            return {"final_answer": f"Document search failed.\n\n{answer}"}
+        return {"final_answer": answer}
 
     except Exception as e:
         print(f"[Synthesiser Node] Error: {e}")
+        if rag_error and web_result:
+            return {"final_answer": "Document search failed.\n\n" + (web_result[:1000] or "Web search results were unavailable.")}
         return {"final_answer": rag_result or web_result}
 
 # ============ GRAPH ASSEMBLY ============
@@ -206,11 +234,13 @@ agent_graph = build_graph()
 # Initialises full state and returns clean result dict.
 
 def run_agent(query: str, session_id: str = None) -> dict:
+    effective_session_id = session_id or str(uuid.uuid4())
     result = agent_graph.invoke({
         "query": query,
-        "session_id": session_id or "",
+        "session_id": effective_session_id,
         "routing_decision": "",
         "rag_result": "",
+        "rag_error": "",
         "web_result": "",
         "final_answer": ""
     })
@@ -218,5 +248,5 @@ def run_agent(query: str, session_id: str = None) -> dict:
         "query": query,
         "routing_decision": result["routing_decision"],
         "final_answer": result["final_answer"],
-        "session_id": result.get("session_id", "")
+        "session_id": result.get("session_id", effective_session_id)
     }
